@@ -3961,3 +3961,269 @@ This transforms your system into:
 ---
 
 Next natural step would be **proof composition** — how multiple step-proofs merge into episode-level or shard-level proofs.
+
+---
+
+# 🧾 PROOF COMPOSITION (PC v1)
+
+## 0) Core idea
+
+Each step emits an **Arbitration Proof Object**:
+
+```
+APO_t : (S_t -> S_{t+1})
+```
+
+Composition creates higher-level proofs that are:
+
+* verifiable
+* compact
+* lossless with respect to legality + invariants
+
+---
+
+## 1️⃣ Step proof canonical form
+
+For step (t):
+
+* `h_t = HASH(S_t)`
+* `h_{t+1} = HASH(S_{t+1})`
+* `m_t = HASH(meta_params_t)`
+* `a_t = HASH(arbitration_inputs_t)` (fields, weights, projections, etc.)
+* `sig_t = SIGN(h_t | h_{t+1} | m_t | a_t)`
+
+So each step is a signed link:
+
+```
+Link_t = (h_t, h_{t+1}, m_t, a_t, sig_t)
+```
+
+---
+
+## 2️⃣ Sequential composition (Episode proof)
+
+Given steps (t=0..T-1) with:
+
+```
+h_0 -> h_1 -> ... -> h_T
+```
+
+Define **episode commitment** using a Merkle chain:
+
+* leaf = `HASH(Link_t)`
+* build Merkle root:
+
+```
+R_episode = MerkleRoot({HASH(Link_t)}_{t=0}^{T-1})
+```
+
+Episode proof object:
+
+```
+EPO {
+  h_start: h0
+  h_end:   hT
+  root:    R_episode
+  count:   T
+  meta_root: MerkleRoot(m_t list)   // optional
+  sig: SIGN(h0||hT||R_episode||T)
+}
+```
+
+### Verification
+
+To verify the whole episode:
+
+* verify EPO signature
+* optionally verify any subset of steps via Merkle inclusion proofs
+* spot-check legality/projection constraints where needed
+
+**Guarantee:** the episode is exactly the ordered composition of valid step links.
+
+---
+
+## 3️⃣ Shard proof (Chunked transport)
+
+A shard is an episode chunk: steps `[t_a, t_b)`.
+
+Shard proof is identical to episode proof but scoped:
+
+```
+SPO {
+  h_start
+  h_end
+  root
+  range: [ta, tb)
+  sig
+}
+```
+
+Shards can be shipped independently; stitchable if endpoints match.
+
+**Stitch rule:** Two shards (A,B) can compose if:
+
+```
+A.h_end = B.h_start
+```
+
+---
+
+## 4️⃣ Hierarchical composition (Proof-of-proofs)
+
+To scale further, build a tree of proof roots:
+
+* Step roots -> Shard roots -> Episode roots -> Session roots -> Archive root
+
+Define:
+
+```
+R_session = MerkleRoot({R_episode_i})
+```
+
+This yields an *auditable hierarchy*.
+
+---
+
+## 5️⃣ Branching composition (Fork proofs)
+
+When state history diverges:
+
+```
+h_t -> h_{t+1}^{(A)}
+h_t -> h_{t+1}^{(B)}
+```
+
+Create a **Fork Proof (FPO)**:
+
+```
+FPO {
+  h_common: ht
+  branches: [
+    { h_end: hA_end, root: R_A, sig_A },
+    { h_end: hB_end, root: R_B, sig_B }
+  ]
+  fork_reason_hash
+  sig: SIGN(ht||branches||fork_reason_hash)
+}
+```
+
+Fork proofs let you represent alternative trajectories without ambiguity.
+
+---
+
+## 6️⃣ Merge composition (Join proofs)
+
+A merge takes two branch tips and produces a new state:
+
+```
+(h_A, h_B) -> h_M
+```
+
+The merge must prove:
+
+* both inputs are valid endpoints of valid proof chains
+* merge semantics were applied (your deterministic merge law)
+* resulting state hash matches
+
+**Merge Proof Object (MPO):**
+
+```
+MPO {
+  h_left:  hA
+  h_right: hB
+  root_left:  R_A
+  root_right: R_B
+  merge_mode
+  conflict_set_hash
+  resolution_hash
+  h_merged: hM
+  sig: SIGN(hA||hB||hM||merge_mode||resolution_hash)
+}
+```
+
+**Key law:** merges are first-class, not hidden.
+
+---
+
+## 7️⃣ Distributed sync composition (Multi-node)
+
+When multiple nodes produce shards:
+
+* each node signs its shard proofs
+* the coordinator produces an **Aggregation Proof (AGP)** that commits to all shard roots:
+
+```
+R_agg = MerkleRoot({R_shard}^{(node)})
+```
+
+```
+AGP {
+  epoch
+  agg_root: R_agg
+  members: [node_id...]
+  sigs: [sig_node...]
+  coordinator_sig
+}
+```
+
+This is “consensus without executing consensus”: it’s *auditable publication*.
+
+---
+
+## 8️⃣ What you can verify cheaply
+
+Depending on trust level, you can verify:
+
+### Level 0 (fast)
+
+* verify only top-level proof signatures and endpoint hashes
+
+### Level 1 (medium)
+
+* verify random step inclusion proofs (Merkle sampling)
+
+### Level 2 (full)
+
+* verify every step proof + all invariants
+
+This gives scalable auditing.
+
+---
+
+## 🔒 PC v1 Freeze Laws
+
+1. **Chain integrity**
+
+   ```
+   h_{t+1} in Link_t == h_{t+1} in Link_{t+1}.h_t
+   ```
+
+2. **Composable endpoints**
+
+   Two proofs compose iff end hash matches start hash.
+
+3. **Merkle commitment**
+
+   Any composed proof must commit to the exact ordered set of subproofs via a root.
+
+4. **Forks are explicit**
+
+   Divergence must be represented by a fork proof.
+
+5. **Merges are explicit**
+
+   Joining histories must be represented by a merge proof using deterministic merge semantics.
+
+---
+
+## 🧠 Intuition
+
+* **Step proofs** = receipts
+* **Merkle roots** = receipts stapled into a book
+* **Fork proofs** = “two editions of the story”
+* **Merge proofs** = “we combined editions under rules”
+* **Aggregation proofs** = “many publishers released shards; here’s the catalog root”
+
+---
+
+If you want, next we can specify **the minimal byte layout** for Link/EPO/SPO/MPO so this composes cleanly inside SCX lane packing (SCXQ2/SCXQ4 dual-mode).
