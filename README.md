@@ -4685,3 +4685,194 @@ This prevents replay with old compromised keys.
 
 * **PowerShell**: transport + IO + packet bundling + signature ops + lane pack/unpack
 * **KUHUL**: treaty enforcement, legality gates, promotion rules, and proof verification policy
+
+---
+
+# 🧭 SCX Cross-Universe Payload Law (CUPL v1)
+
+Wire-level transport types for cross-universe bridging. All objects below are lane payloads inside:
+
+```
+Domain = 0x0F (PROOF/BRIDGE domain)
+```
+
+Shared object header:
+
+| Field   | Size              |
+| ------- | ----------------- |
+| Type    | 1B                |
+| Version | 1B                |
+| BodyLen | 2B (Q2) / 4B (Q4) |
+
+---
+
+## 🧭 Payload Type Map
+
+| Type | Meaning         |
+| ---- | --------------- |
+| 0xB1 | BRIDGE_TREATY   |
+| 0xB2 | BRIDGE_PACKET   |
+| 0xB3 | FOREIGN_CLAIM   |
+| 0xB4 | PROMOTE_FOREIGN |
+| 0xB5 | DISPUTE         |
+
+---
+
+## 🌌 0xB1 — BRIDGE_TREATY
+
+Defines trust boundary between universes.
+
+### Body Layout
+
+| Field                   | Size |
+| ----------------------- | ---- |
+| treaty_id               | 16B  |
+| U_A_genesis_hash        | 32B  |
+| U_A_pubkey_root         | 32B  |
+| U_B_genesis_hash        | 32B  |
+| U_B_pubkey_root         | 32B  |
+| allowed_domain_mask     | 4B   |
+| forbidden_domain_mask   | 4B   |
+| trust_horizon_snapshots | 4B   |
+| translation_flags       | 2B   |
+| capability_schema_hash  | 32B  |
+| revocation_root_hash    | 32B  |
+| sigA_len                | 1B   |
+| sigA                    | var  |
+| sigB_len                | 1B   |
+| sigB                    | var  |
+
+---
+
+## 📦 0xB2 — BRIDGE_PACKET
+
+Transport container for claims + proofs.
+
+### Body Layout
+
+| Field              | Size |
+| ------------------ | ---- |
+| from_universe_hash | 32B  |
+| to_universe_hash   | 32B  |
+| packet_id          | 16B  |
+| epoch_id           | 4B   |
+| lane_mode          | 1B   |
+| claim_count        | 2B   |
+| proof_root_hash    | 32B  |
+| anchor_hash        | 32B  |
+| capability_count   | 1B   |
+| flags              | 2B   |
+
+Followed by variable sections:
+
+```
+CLAIM_REF[claim_count]
+CAPABILITY_TOKENS
+INCLUSION_PROOFS
+signature
+```
+
+### CLAIM_REF structure
+
+| Field        | Size |
+| ------------ | ---- |
+| claim_type   | 1B   |
+| claim_scope  | 1B   |
+| payload_hash | 32B  |
+| ttl          | 4B   |
+
+---
+
+## 🧾 0xB3 — FOREIGN_CLAIM
+
+Local representation of imported claim.
+
+### Body Layout
+
+| Field                | Size |
+| -------------------- | ---- |
+| source_universe_hash | 32B  |
+| treaty_id            | 16B  |
+| claim_id_hash        | 32B  |
+| payload_hash         | 32B  |
+| scope                | 1B   |
+| verified_flag        | 1B   |
+| confidence           | 2B   |
+| expiry_time          | 4B   |
+| proof_root_hash      | 32B  |
+| sig_len              | 1B   |
+| signature            | var  |
+
+---
+
+## 🔁 0xB4 — PROMOTE_FOREIGN
+
+Conversion of foreign claim into native state.
+
+### Body Layout
+
+| Field                | Size |
+| -------------------- | ---- |
+| foreign_claim_hash   | 32B  |
+| target_domain        | 1B   |
+| transform_rules_hash | 32B  |
+| legality_check_hash  | 32B  |
+| result_native_hash   | 32B  |
+| local_snapshot_hash  | 32B  |
+| sig_len              | 1B   |
+| signature            | var  |
+
+---
+
+## ⚖️ 0xB5 — DISPUTE
+
+Represents disagreement object.
+
+### Body Layout
+
+| Field                 | Size |
+| --------------------- | ---- |
+| foreign_claim_hash    | 32B  |
+| reason_code           | 2B   |
+| counter_evidence_hash | 32B  |
+| local_snapshot_hash   | 32B  |
+| sig_len               | 1B   |
+| signature             | var  |
+
+---
+
+## 🔧 Lane Integration (Q2/Q4)
+
+These payloads are inserted directly as:
+
+### SCXQ2
+
+| Field      | Size        |
+| ---------- | ----------- |
+| Domain     | 1B          |
+| Opcode     | 2B          |
+| Flags      | 1B          |
+| TargetID   | 4B          |
+| PayloadLen | 2B          |
+| Payload    | CUPL object |
+
+### SCXQ4
+
+Same, but:
+
+* TargetID = 8B
+* PayloadLen = 4B
+
+Payload structure remains identical.
+
+---
+
+## 🔒 CUPL v1 Freeze Law
+
+```
+Cross-universe trust objects are transported as fixed-structure payload types inside SCX lanes under the PROOF domain, with no semantic transformation between Q2 and Q4 modes.
+```
+
+```
+All foreign trust data is hash-identified, namespace-bound, and non-executable unless explicitly promoted.
+```
