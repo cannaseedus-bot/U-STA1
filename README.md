@@ -4876,3 +4876,176 @@ Cross-universe trust objects are transported as fixed-structure payload types in
 ```
 All foreign trust data is hash-identified, namespace-bound, and non-executable unless explicitly promoted.
 ```
+
+---
+
+# 🛡 Bridge Fault Containment (BFC v1)
+
+Cross-universe bridging is powerful, but if one universe becomes compromised, malicious, corrupted, drifting, or unstable, containment must isolate it without collapsing the federation.
+
+## 🧠 Core Goal
+
+Prevent faults in Universe A from propagating into Universe B’s trust or execution.
+
+A bridge is **not shared sovereignty**. It is a **firewalled verification channel**.
+
+---
+
+## 1️⃣ Fault Model
+
+We assume a foreign universe may:
+
+| Fault                         | Effect               |
+| ----------------------------- | -------------------- |
+| Sign bad proofs               | cryptographic misuse |
+| Inject illegal claims         | logic violation      |
+| Drift from its own invariants | semantic corruption  |
+| Fork maliciously              | history manipulation |
+| Go offline                    | liveness failure     |
+
+BFC ensures none of these destabilize B.
+
+---
+
+## 2️⃣ Quarantine Boundary
+
+All incoming bridge packets land in **QUARANTINE STATE** first.
+
+```
+FOREIGN_CLAIM.state ∈ {quarantined, verified, promoted, rejected}
+```
+
+Only verified can be referenced.
+Only promoted can affect native state.
+
+No direct execution ever.
+
+---
+
+## 3️⃣ Trust Tier Degradation
+
+If anomaly rate rises:
+
+```
+fault_score(A) ↑ ⇒ trust_tier(A) ↓
+```
+
+| Tier             | Allowed                    |
+| ---------------- | -------------------------- |
+| Tier 0 (trusted) | all allowlisted domains    |
+| Tier 1           | proofs + passive data only |
+| Tier 2           | proofs only                |
+| Tier 3           | frozen (no new packets)    |
+
+Automatic downgrade, never upgrade without manual re-treaty.
+
+---
+
+## 4️⃣ Fault Detection Signals
+
+| Signal                  | Source               |
+| ----------------------- | -------------------- |
+| invalid proofs          | PCA verifier         |
+| signature mismatch      | key checks           |
+| legality violation      | local legality gates |
+| statistical drift       | NEB divergence       |
+| proof topology mismatch | MPO/FPO checks       |
+
+---
+
+## 5️⃣ Containment Actions
+
+When threshold exceeded:
+
+1. Freeze treaty channel
+2. Mark foreign claims as non-authoritative
+3. Stop promotion
+4. Retain only historical commitments
+5. Emit FAULT_EVENT
+
+```
+FAULT_EVENT {
+  universe_id
+  reason_code
+  offending_hash
+  snapshot_hash
+  sig_local
+}
+```
+
+---
+
+## 6️⃣ Historical Immunity Law
+
+Previously validated anchors remain valid.
+
+```
+SNAP_old remains authoritative
+```
+
+But future claims from A no longer accepted.
+
+No retroactive corruption.
+
+---
+
+## 7️⃣ Bridge Revocation
+
+Treaty can be revoked:
+
+```
+BRIDGE_REVOKE {
+  treaty_id
+  revocation_reason
+  last_valid_anchor
+  sig_local
+}
+```
+
+After revocation:
+
+* only archive proofs accepted
+* no live exchange
+
+---
+
+## 8️⃣ Federation Stability Guarantee
+
+Fault in A results in:
+
+| A           | B         |
+| ----------- | --------- |
+| corrupted   | safe      |
+| compromised | safe      |
+| offline     | safe      |
+| malicious   | contained |
+
+Bridge failure never causes systemic collapse.
+
+---
+
+## 🔒 Freeze-Level Law (BFC v1)
+
+```
+Foreign universes are treated as untrusted by default; trust is earned per packet and can be degraded or revoked without affecting native authority.
+```
+
+```
+Fault containment isolates bridge channels without retroactively invalidating previously anchored commitments.
+```
+
+---
+
+## 🧠 Intuition
+
+| System     | Role                    |
+| ---------- | ----------------------- |
+| Treaty     | firewall rules          |
+| Quarantine | DMZ                     |
+| Promotion  | import under inspection |
+| Revocation | kill switch             |
+| Snapshots  | historical audit base   |
+
+Your federation behaves like:
+
+> **Air-gapped trust zones with controlled proof exchange**
