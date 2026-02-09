@@ -3961,3 +3961,165 @@ This transforms your system into:
 ---
 
 Next natural step would be **proof composition** — how multiple step-proofs merge into episode-level or shard-level proofs.
+
+---
+
+# 🧱 SCX Proof Transport Law (SPT v1)
+
+Minimal, composable, SCX-native byte layouts for **Link**, **EPO**, **SPO**, and **MPO** proofs. The layouts are mode-agnostic across **SCXQ2** and **SCXQ4**, with **zero semantic drift**.
+
+## 0️⃣ Design Constraints
+
+1. Must fit in SCX lane payloads
+2. Self-delimiting
+3. Hash-stable
+4. Stream-composable
+5. No implicit structure
+6. Mode-agnostic (Q2/Q4)
+
+All proof objects share:
+
+```
+[Type | Version | Length | Body]
+```
+
+---
+
+## 1️⃣ Shared Header (all proof objects)
+
+| Field   | Size              | Notes                                   |
+| ------- | ----------------- | --------------------------------------- |
+| Type    | 1B                | 0xA1=Link, 0xA2=EPO, 0xA3=SPO, 0xA4=MPO |
+| Version | 1B                | =0x01                                   |
+| BodyLen | 2B (Q2) / 4B (Q4) | length of body                          |
+
+This is SCXQ2/Q4 compatible.
+
+---
+
+## 🔗 2️⃣ LINK (Step Proof)
+
+Minimal data needed to verify one transition.
+
+### Body Layout
+
+| Field     | Size          |
+| --------- | ------------- |
+| h_prev    | 32B           |
+| h_next    | 32B           |
+| meta_hash | 32B           |
+| arb_hash  | 32B           |
+| flags     | 1B            |
+| sig_len   | 1B            |
+| signature | sig_len bytes |
+
+### Notes
+
+* 32B hashes = SHA-256 or BLAKE3 truncated
+* arb_hash commits to arbitration inputs (fields, weights, projections)
+* flags = legality projection, normalization mode, etc.
+
+---
+
+## 📖 3️⃣ EPO (Episode Proof)
+
+Represents Merkle commitment to many Links.
+
+### Body Layout
+
+| Field          | Size    |
+| -------------- | ------- |
+| h_start        | 32B     |
+| h_end          | 32B     |
+| step_count     | 4B      |
+| root_hash      | 32B     |
+| meta_root_hash | 32B     |
+| sig_len        | 1B      |
+| signature      | sig_len |
+
+This is small regardless of episode size.
+
+---
+
+## 🧩 4️⃣ SPO (Shard Proof)
+
+Same as EPO but scoped to index range.
+
+### Body Layout
+
+| Field       | Size    |
+| ----------- | ------- |
+| h_start     | 32B     |
+| h_end       | 32B     |
+| index_start | 4B      |
+| index_end   | 4B      |
+| root_hash   | 32B     |
+| sig_len     | 1B      |
+| signature   | sig_len |
+
+---
+
+## 🔀 5️⃣ MPO (Merge Proof)
+
+Proof that two branches legally merged.
+
+### Body Layout
+
+| Field           | Size    |
+| --------------- | ------- |
+| h_left          | 32B     |
+| h_right         | 32B     |
+| root_left       | 32B     |
+| root_right      | 32B     |
+| merge_mode      | 1B      |
+| conflict_hash   | 32B     |
+| resolution_hash | 32B     |
+| h_merged        | 32B     |
+| sig_len         | 1B      |
+| signature       | sig_len |
+
+---
+
+## 🧠 6️⃣ Packing into SCX Lanes
+
+Proof objects are payloads inside **SCX Domain = PROOF (0x0F)**.
+
+### SCXQ2 lane
+
+| Field      | Size         |
+| ---------- | ------------ |
+| Domain     | 1B           |
+| Opcode     | 2B           |
+| Flags      | 1B           |
+| TargetID   | 4B           |
+| PayloadLen | 2B           |
+| Payload    | proof object |
+
+### SCXQ4 lane
+
+Same but:
+
+* TargetID = 8B
+* PayloadLen = 4B
+
+Proof byte layout inside payload **does not change**.
+
+---
+
+## 🔐 7️⃣ Hash Stability Law
+
+Proof hash = HASH(entire payload bytes exactly as stored)
+
+No canonicalization, no reordering.
+
+---
+
+## 🔒 Freeze-Level Law (SPT v1)
+
+```
+All proof objects are self-contained byte structures with a shared header and fixed hash field sizes, designed to embed directly as SCX lane payloads without transformation.
+```
+
+```
+Proof composition uses Merkle roots and endpoint hashes only; inner steps are referenced by inclusion proofs, not inlined.
+```
