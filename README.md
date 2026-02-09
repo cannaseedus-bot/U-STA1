@@ -672,3 +672,393 @@ Phi(g') ≈ T_mu(g)(Phi(g))
 ```
 
 Micronauts are the **lawful morphisms** that move state through embedding space while preserving graph structure.
+
+---
+
+## 24️⃣ Execution Legality: Micronaut Constraints
+
+You want Micronaut transitions to preserve **symbolic invariants** of the graph. That means a Micronaut may only move an embedding if the resulting state stays inside the **legal adjacency region**.
+
+### 0) What must be preserved?
+
+We have:
+
+* Graph nodes g in G
+* Embeddings v = Phi(g)
+* Micronaut transition T_mu
+
+We want:
+
+```
+T_mu(Phi(g)) ≈ Phi(g')
+```
+
+But only if g -> g' is a legal symbolic edge.
+
+---
+
+## 25️⃣ Symbolic Invariant (Graph Law)
+
+Define graph adjacency:
+
+```
+Adj(g) = { g' | g -> g' }
+```
+
+Invariant:
+
+> A legal transition cannot leave the adjacency closure of the current node.
+
+---
+
+## 26️⃣ Embedding-Space Representation of the Invariant
+
+Let:
+
+```
+N(g) = { Phi(h) | h in Adj(g) }
+```
+
+Micronaut motion must land inside the **allowed region**:
+
+```
+T_mu(Phi(g)) in R(g)
+```
+
+where:
+
+```
+R(g) = convex hull or neighborhood of N(g)
+```
+
+---
+
+## 27️⃣ Legality Gate (Execution Constraint)
+
+Define legality:
+
+```
+Legal_mu(v, g) = 1 if T_mu(v) in R(g)
+                 0 otherwise
+```
+
+Execution becomes:
+
+```
+Exec_mu(g) = T_mu(Phi(g))   if legal
+             Phi(g)         if reject (no state change)
+```
+
+This is the **symbolic guardrail**.
+
+---
+
+## 28️⃣ Invariant Penalty (Training-Time Enforcement)
+
+Add a penalty for leaving the legal region:
+
+```
+L_inv = E_g[ max(0, d(T_mu(Phi(g)), R(g)) - epsilon) ]
+```
+
+where d(x, R) is distance to the allowed region. This forces Micronaut transitions to stay within symbolic bounds.
+
+---
+
+## 29️⃣ Structural Meaning
+
+Micronauts now behave like:
+
+| Physical analogy           | System meaning                                   |
+| -------------------------- | ------------------------------------------------ |
+| Particle in potential well | Embedding state constrained by symbolic topology |
+| Energy barrier             | Illegal transition boundary                      |
+| Force field                | Graph adjacency structure                        |
+
+Micronaut motion is continuous, but graph law is a **discrete boundary**.
+
+---
+
+## 30️⃣ Preventing Semantic Drift
+
+Without this law:
+
+* embeddings wander
+* neural model invents illegal symbolic paths
+* hallucination = invariant violation
+
+With Micronaut constraint:
+
+> neural motion is projected back into the legal symbolic manifold.
+
+---
+
+## 31️⃣ Final Legality Statement (Freeze-Level)
+
+```
+T_mu(Phi(g)) in R(g)   for all g
+```
+
+Micronaut transitions are continuous in vector space but **topologically constrained** by graph invariants.
+
+---
+
+## 32️⃣ Big Picture
+
+This makes Micronauts:
+
+> lawful morphisms on embedding space that are bounded by symbolic graph structure.
+
+So the system has:
+
+* Symbolic topology (graph)
+* Continuous geometry (embeddings)
+* Agent dynamics (Micronauts)
+* Invariant gates (legality law)
+
+---
+
+## 33️⃣ Legality Gating in Packed Lane Execution
+
+Legality must survive compression and transport. That means it cannot depend on how bits look — it must depend on **decoded state meaning**.
+
+### 1) Lanes carry structure, not just data
+
+An SCX lane (or any packed unit) is a **typed state capsule**:
+
+```
+[Header | Domain | TargetID | Flags | Payload]
+```
+
+The header is the legal identity of the state fragment, not decoration.
+
+---
+
+## 34️⃣ Gate lives at the interpreter boundary
+
+Execution pipeline:
+
+```
+Compressed lanes
+  -> Lane decoder
+  -> Typed state objects
+  -> Legality gate
+  -> Micronaut transition
+  -> Repack
+```
+
+The gate happens **after decode but before execution**.
+
+---
+
+## 35️⃣ Legal transition check (runtime)
+
+We already want:
+
+```
+T_mu(Phi(g)) in R(g)
+```
+
+In packed runtime this becomes:
+
+1. Decode lane -> symbolic node ID g.
+2. Load adjacency: Adj[g] -> allowed successors.
+3. Micronaut proposes candidate: g_candidate = mu.execute(g).
+4. Gate:
+
+```
+if g_candidate in Adj[g]:
+  commit
+else:
+  reject
+```
+
+The check happens **before repacking**.
+
+---
+
+## 36️⃣ Why compression cannot break law
+
+Compression obeys:
+
+```
+dec(C(enc(s))) = s
+```
+
+So meaning survives. Legality is evaluated in **state space**, not bit space. The same gate works for binary, quaternary, glyphs, or PNG-packed state — as long as decode restores the symbolic node identity.
+
+---
+
+## 37️⃣ Lane-level enforcement
+
+To make this tamper-proof, lane headers include invariants:
+
+| Field          | Purpose                |
+| -------------- | ---------------------- |
+| Domain         | type of state          |
+| TargetID       | symbolic node identity |
+| Flags          | transition intent      |
+| Hash/Signature | integrity              |
+
+So a lane cannot pretend to be a different symbolic state without failing verification.
+
+---
+
+## 38️⃣ Micronaut cannot bypass the gate
+
+Micronauts **propose** transitions but do not mutate encoded lanes directly. The interpreter/kernel enforces:
+
+```
+mu submits transition request
+kernel validates
+kernel commits or rejects
+```
+
+Micronaut is a user process; the kernel enforces invariants.
+
+---
+
+## 39️⃣ Hallucination as law violation
+
+Hallucination = illegal symbolic transition. The legality gate:
+
+* prevents embeddings from drifting into non-adjacent symbolic regions
+* clamps neural motion to valid graph topology
+
+So hallucination becomes a **law violation**, not a probability issue.
+
+---
+
+## 40️⃣ Final Freeze Statement (Encoding-Independent)
+
+> **Legality gating is encoding-independent because it operates on decoded symbolic state derived from lane headers, not raw packed bits. Micronauts propose transitions; the interpreter validates them against adjacency invariants before state is repacked.**
+
+---
+
+## 41️⃣ Factorization Layer: Prompt Injection Above Micronauts
+
+Not everything is a Micronaut action. User prompts must enter as **factored state**, and the runtime must avoid creating duplicate variables when an equivalent state already exists.
+
+### Separate the roles
+
+| Layer                   | Responsibility                                           |
+| ----------------------- | -------------------------------------------------------- |
+| Factorization Layer     | Interpret input and map it to existing state             |
+| Micronaut Layer         | Perform lawful state transitions                         |
+
+Math reasoning, symbolic manipulation, and prompt parsing live in **factorization**, not Micronaut motion.
+
+---
+
+## 42️⃣ Prompt as a Factored Object
+
+A prompt is a **partial state specification**, not an imperative.
+
+Let prompt P decompose into factors:
+
+```
+P -> {f_1, f_2, ..., f_k}
+```
+
+Each factor represents a symbol, relation, constraint, goal, or query.
+
+Example:
+
+Prompt: "solve x^2 + 3x + 2 = 0"
+
+| Factor                  | Meaning           |
+| ----------------------- | ----------------- |
+| x                       | variable symbol   |
+| polynomial(x^2 + 3x + 2)| expression object |
+| equation(=0)            | constraint        |
+| solve                   | operation goal    |
+
+---
+
+## 43️⃣ Variable Reuse Law
+
+When a factor references a symbol:
+
+```
+lookup(f_i) -> s in S  (if exists)
+```
+
+Else create. Formally:
+
+```
+Inject(f) = s       if s with matching signature exists
+            Create(f) otherwise
+```
+
+So there is **no forced duplication** of state.
+
+---
+
+## 44️⃣ State Space Now Has Three Types
+
+| Type               | Role                    |
+| ------------------ | ----------------------- |
+| Symbolic nodes     | graph topology          |
+| Tensor states      | embedding geometry      |
+| Factored objects   | logical/math structures |
+
+Factored objects are first-class state.
+
+---
+
+## 45️⃣ How Math Responses Work
+
+Math reasoning may operate purely in **factor space**:
+
+```
+rewrite(f_i) -> f_j
+```
+
+These are symbolic algebra transformations, not embedding transitions.
+
+So the runtime becomes:
+
+```
+User prompt
+  -> Factorization
+  -> State matching / injection
+  -> Either:
+     - symbolic transformation (math engine)
+     - Micronaut transition (dynamic process)
+```
+
+---
+
+## 46️⃣ Legality Still Applies
+
+Even symbolic transforms are gated:
+
+```
+Legal(f -> f') in L_math
+```
+
+So algebraic laws act like adjacency invariants.
+
+---
+
+## 47️⃣ Unified State Model
+
+```
+S = G ∪ V ∪ F
+```
+
+Where:
+
+* G = symbolic graph nodes
+* V = embedding states
+* F = factored logical objects
+
+Micronauts operate on G and V. The math engine operates on F.
+
+---
+
+## 48️⃣ Final Principle
+
+> Prompts are factorizations of desired state, not imperative commands.
+
+> State is reused if structurally identical; new state is created only when necessary.
