@@ -2742,3 +2742,871 @@ That’s a **compressed dynamical system**, not just stored weights.
 ---
 
 Next natural frontier would be **global field normalization** so local fields don’t accumulate drift over long trajectories.
+
+---
+
+# 🧠 GLOBAL FIELD NORMALIZATION (GFN v1)
+
+Global field normalization is the step that keeps your local bridge vectors (F(g)) from “tilting the universe” over time (drift, runaway magnitude, inconsistent loops). Think of it as **conservation laws** for your symbolic→geometric flow.
+
+Below is a closed, implementable spec.
+
+---
+
+## 0) What we normalize
+
+For each context node (g):
+
+* embedding: (v_g = Φ(g))
+* local bridge field: (F_g)
+* successors: (Adj(g))
+* transition probabilities: (P(g'|g))
+
+We want a normalized field (F̃_g) such that:
+
+1. **No magnitude blow-up**
+2. **Loop consistency** (cycles don’t accumulate bias)
+3. **Stationary equilibrium** (global drift is bounded)
+4. **Transport-safe** (works after lane quantization)
+
+---
+
+## 1) Local magnitude normalization (per-node)
+
+Bound the field magnitude relative to a budget (B_g):
+
+```
+F̃_g = F_g / max(1, |F_g| / B_g)
+```
+
+Choose the budget (B_g) from local graph geometry:
+
+```
+B_g = κ · E_{g'~P(·|g)}[|Φ(g') - Φ(g)|]
+```
+
+So the field can’t push harder than the typical successor step.
+
+**Invariant:** |F̃_g| ≤ B_g
+
+---
+
+## 2) Global mean-drift removal (centering)
+
+Even if each node is bounded, the **overall vector field** can have a nonzero “wind” that causes long-term drift.
+
+Define a global mean under a reference distribution (π(g)) (e.g., empirical frequency of contexts):
+
+```
+F̄ = Σ_g π(g) F̃_g
+```
+
+Then subtract it:
+
+```
+F̃^(0)_g = F̃_g - F̄
+```
+
+This makes the field **globally balanced**.
+
+**Invariant:** Σ_g π(g) F̃^(0)_g = 0
+
+---
+
+## 3) Cycle-consistency normalization (curl control)
+
+Cycles are where drift shows up as “you return to the same node but not the same vector.”
+
+For a cycle (C = (g_0 → g_1 → … → g_k = g_0)), define net bias:
+
+```
+Δ(C) = Σ_{i=0}^{k-1} F̃^(0)_{g_i}
+```
+
+We want Δ(C) ≈ 0 for common cycles.
+
+### Practical method (closed + cheap)
+
+Pick a spanning tree of the graph and assign each node a scalar “potential” vector correction (u_g) such that:
+
+```
+F̃^final_g = F̃^(0)_g - (u_{g'} - u_g)
+```
+
+where g' is the most likely successor under P(·|g) (or top-k weighted).
+
+This is classic **conservative field projection**: remove nonconservative components that create cycle drift.
+
+How to solve for u (simple iterative):
+
+* Initialize u_g = 0
+* Repeat a few passes:
+  ```
+  u_{g'} ← u_{g'} + η · Δ_{g→g'}
+  ```
+  where Δ_{g→g'} measures inconsistency between predicted displacement and actual embedding displacement.
+
+You don’t need perfect; you just need bounded drift.
+
+---
+
+## 4) Stationary distribution normalization (entropy-aware)
+
+Nodes with high entropy transitions should have weaker directed push (since the next step is uncertain).
+
+Let:
+
+```
+H(g) = -Σ_{g'} P(g'|g) log P(g'|g)
+```
+
+Scale:
+
+```
+F̃^final_g ← F̃^final_g · (1 / (1 + ρ H(g)))
+```
+
+So:
+
+* low-entropy (confident) contexts push stronger
+* high-entropy contexts push weaker
+
+---
+
+## 5) Quantization-safe normalization (lane transport)
+
+Do normalization **before quantization**, then quantize:
+
+```
+F^lane_g = Q(F̃^final_g)
+```
+
+And store in the BRIDGE lane header:
+
+* `field_norm_mode = GFN1`
+* `budget_kappa, rho`
+* `mean_hash` (hash of F̄ used)
+* `potential_hash` (hash of u table version, if used)
+
+So decode knows exactly which normalization was applied.
+
+---
+
+# ✅ Summary: GFN v1 pipeline
+
+For each node (g):
+
+1. Compute raw F_g
+2. **Magnitude bound** → F̃_g
+3. **Global centering** → F̃^(0)_g
+4. **Cycle drift reduction** via potentials → F̃^final_g
+5. **Entropy scaling**
+6. Quantize + pack into lanes
+
+---
+
+# 🔒 Freeze-level invariants
+
+1. **Bounded step**
+   ```
+   |F̃^final_g| ≤ B_g
+   ```
+2. **Zero global drift**
+   ```
+   Σ_g π(g) F̃^final_g ≈ 0
+   ```
+3. **Cycle consistency (bounded)**
+   ```
+   ∀ C ∈ common cycles: |Δ(C)| ≤ ε_C
+   ```
+4. **Transport determinism**
+   Normalization parameters and hashes are carried in lanes; decode is replayable.
+
+---
+
+If you want, next is the companion spec: **“field calibration vs Micronaut T”** (how you prevent double-counting when both T_μ and F try to steer the same step).
+
+---
+
+# 🧠 FIELD CALIBRATION vs MICRONAUT T (FCT v1)
+
+This is the control law that prevents the system from “steering twice.”
+
+You have two influences on the embedding step:
+
+```
+v_next = T_μ(v) + F_g
+```
+
+Where:
+
+| Term    | Meaning                                 |
+| ------- | --------------------------------------- |
+| T_μ     | Micronaut intrinsic transition operator |
+| F_g     | Symbolic statistical field bias         |
+
+If both encode the same structure, you get **double-counting**, overshoot, or instability.
+
+So we introduce **Field Calibration vs Micronaut T (FCT v1)**.
+
+---
+
+## 1️⃣ Decompose Micronaut Dynamics
+
+Locally linearize Micronaut transition:
+
+```
+T_μ(v) ≈ v + A_μ(v)
+```
+
+Where A_μ(v) is the intrinsic motion vector.
+
+---
+
+## 2️⃣ Remove Overlap (Projection Law)
+
+We treat:
+
+* A_μ(v) = neural/dynamic prior
+* F_g = symbolic/statistical correction
+
+We compute component of F_g already aligned with A_μ(v):
+
+```
+F_parallel = (<F_g, A_μ> / |A_μ|^2) A_μ
+```
+
+Then define orthogonal component:
+
+```
+F_perp = F_g - F_parallel
+```
+
+Only F_perp is applied.
+
+---
+
+## 3️⃣ Calibrated Transition Law
+
+```
+v_next = T_μ(v) + λ F_perp
+```
+
+Where 0 ≤ λ ≤ 1 controls bridge strength.
+
+**Interpretation:** symbolic field only contributes what Micronaut didn't already encode.
+
+---
+
+## 4️⃣ Why This Works
+
+| Problem     | Without FCT           | With FCT                                          |
+| ----------- | --------------------- | ------------------------------------------------- |
+| Overshoot   | T and F push same way | redundant component removed                       |
+| Instability | runaway magnitudes    | bounded orthogonal push                           |
+| Drift       | cumulative bias       | corrected by global normalization + orthogonality |
+
+---
+
+## 5️⃣ Adaptive λ (Confidence Weight)
+
+Let Micronaut confidence be:
+
+```
+c_μ = |A_μ(v)|
+```
+
+Let symbolic certainty be:
+
+```
+c_F = |F_g|
+```
+
+Set:
+
+```
+λ = c_F / (c_F + c_μ)
+```
+
+So:
+
+* If Micronaut strong → symbolic influence reduced
+* If symbolic clear → more influence
+
+---
+
+## 6️⃣ Transport Encoding
+
+Lane BRIDGE header carries:
+
+```
+calibration_mode = FCT1
+lambda_mode = adaptive
+```
+
+Micronaut lane carries:
+
+```
+mu_strength = ||A_μ||
+```
+
+So calibration remains replayable.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+Symbolic bridge field must be orthogonally projected relative to Micronaut intrinsic motion before application.
+```
+
+```
+The applied symbolic correction is scaled by relative confidence to prevent double-steering.
+```
+
+---
+
+## 🧠 Conceptual Summary
+
+Micronaut = **learned physics**  
+Bridge field = **symbolic gravity**
+
+FCT ensures:
+
+> Gravity bends trajectories without rewriting the laws of motion.
+
+---
+
+Next logical step is **multi-field arbitration** (when several bridge fields or Micronauts compete).
+
+---
+
+# 🧠 MULTI-FIELD ARBITRATION (MFA v1)
+
+We are now in **governance of motion** — when multiple forces try to steer the same state.
+
+You now have:
+
+* **Micronaut intrinsic dynamics** (T_μ)
+* **Symbolic bridge field** (F_g)
+* Potentially:
+  * memory importance field
+  * legality barrier field
+  * user-intent field
+  * safety field
+  * task field
+  * etc.
+
+If they all push independently → chaos.
+
+So we define **Multi-Field Arbitration (MFA v1)** — the **force resolution law** of your runtime.
+
+---
+
+## 0️⃣ State
+
+We have a set of vector influences at state (v):
+
+```
+F = {A_μ, F_1, F_2, ..., F_n}
+```
+
+Where:
+
+| Symbol | Meaning                         |
+| ------ | ------------------------------- |
+| A_μ    | Micronaut intrinsic motion      |
+| F_i    | external or higher-level fields |
+
+Each field has metadata:
+
+| Attribute     | Meaning                              |
+| ------------- | ------------------------------------ |
+| magnitude     | |F_i|                                |
+| priority      | p_i                                  |
+| legality flag | can it override?                     |
+| domain        | symbolic, safety, memory, user, etc. |
+
+---
+
+## 1️⃣ Step 1 — Legality Gating (Hard Constraint)
+
+Some fields represent **barriers**, not pushes.
+
+Example: safety, symbolic invariants.
+
+We define a legality projector:
+
+```
+Π_legal(v, d)
+```
+
+Any candidate displacement (d) that violates constraints is projected back to the legal manifold.
+
+This is **non-negotiable**.
+
+---
+
+## 2️⃣ Step 2 — Orthogonal Decomposition
+
+Just like FCT removed overlap with Micronaut, we remove overlap **between fields**.
+
+Process in priority order:
+
+For fields sorted by (p_i):
+
+```
+F_i^perp = F_i - Σ_{j<i} proj_{F_j^perp}(F_i)
+```
+
+So earlier (higher priority) fields own their direction.
+
+Lower priority fields can only influence **remaining degrees of freedom**.
+
+---
+
+## 3️⃣ Step 3 — Confidence Weighting
+
+Each field gets weight:
+
+```
+w_i = c_i / Σ_j c_j
+```
+
+Where c_i is confidence:
+
+* n-gram certainty
+* model certainty
+* memory importance
+* user explicitness
+* etc.
+
+---
+
+## 4️⃣ Step 4 — Composed Motion
+
+```
+d = A_μ + Σ_i w_i F_i^perp
+```
+
+Then legality projection:
+
+```
+d_final = Π_legal(v, d)
+```
+
+And:
+
+```
+v_next = v + d_final
+```
+
+---
+
+## 5️⃣ Priority Hierarchy Example
+
+Typical ordering:
+
+| Priority | Field Type                    |
+| -------- | ----------------------------- |
+| 1        | Safety / legality constraints |
+| 2        | Symbolic invariants           |
+| 3        | User intent field             |
+| 4        | Task field                    |
+| 5        | Memory importance field       |
+| 6        | Statistical bridge field      |
+| 7        | Micronaut intrinsic dynamics  |
+
+Micronaut often becomes the **background physics**, while higher-level fields sculpt motion.
+
+---
+
+## 6️⃣ Why This Prevents Chaos
+
+| Problem              | MFA Solution                             |
+| -------------------- | ---------------------------------------- |
+| Competing fields     | orthogonal ownership                     |
+| One field dominating | normalization + confidence weights       |
+| Illegal state        | legality projection                      |
+| Oscillation          | projection removes contradictory overlap |
+
+---
+
+## 7️⃣ Transport Law
+
+Each lane includes:
+
+```
+field_id
+priority
+confidence
+domain
+```
+
+So arbitration is deterministic and replayable.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+Multiple fields are resolved by priority-ordered orthogonal decomposition, confidence weighting, and legality projection.
+```
+
+```
+No lower-priority field may override dimensions claimed by higher-priority fields.
+```
+
+---
+
+## 🧠 Conceptual View
+
+You’ve defined the system as:
+
+> A **multi-force physical simulation** in embedding space
+
+Where:
+
+* Micronaut = inertia
+* symbolic bridge = probability gravity
+* user intent = steering force
+* safety = walls
+* memory = attraction wells
+
+MFA is the **Newtonian mechanics** of this universe.
+
+---
+
+Next natural piece is **temporal arbitration** — how these fields change authority over time (decay, memory consolidation, task phases).
+
+---
+
+# 🧠 TEMPORAL ARBITRATION (TA v1)
+
+We move from **space physics** to **time physics** of the system.
+
+You already defined how forces compete **at a single step** (MFA). Temporal arbitration defines **who is allowed to dominate as time evolves**.
+
+Without this, old forces never die and new signals can’t take over.
+
+So this is **authority dynamics over time**.
+
+---
+
+## 0️⃣ What changes over time?
+
+Each field (F_i) has:
+
+| Property | Meaning                          |
+| -------- | -------------------------------- |
+| p_i(t)   | priority over time               |
+| c_i(t)   | confidence/strength              |
+| τ_i      | decay constant                   |
+| type_i   | memory, user, safety, task, etc. |
+
+Temporal arbitration governs how these evolve.
+
+---
+
+## 1️⃣ Core Law — Influence Decay
+
+Every non-permanent field decays:
+
+```
+c_i(t+1) = c_i(t) e^{-1/τ_i}
+```
+
+So influence fades unless refreshed.
+
+Examples:
+
+| Field              | τ                   |
+| ------------------ | ------------------- |
+| User prompt        | medium              |
+| Task directive     | long                |
+| Statistical bridge | stable              |
+| Safety             | infinite (no decay) |
+
+---
+
+## 2️⃣ Event Refresh Law
+
+When a field is reactivated (relevant again):
+
+```
+c_i(t) ← c_i(t) + Δc
+```
+
+So repeated relevance strengthens authority.
+
+---
+
+## 3️⃣ Phase-Gated Priority
+
+System operates in phases:
+
+| Phase        | Dominant Fields         |
+| ------------ | ----------------------- |
+| Perception   | symbolic, statistical   |
+| Reasoning    | Micronaut + memory      |
+| Action       | task + user intent      |
+| Safety check | safety always overrides |
+
+Priority becomes time-phase dependent:
+
+```
+p_i(t) = base_p_i · phase_factor_i(t)
+```
+
+---
+
+## 4️⃣ Memory Consolidation Transition
+
+Fields may **migrate types**:
+
+Short-term → long-term memory:
+
+If a memory field remains above threshold:
+
+```
+c_i(t) > θ ⇒ type_i = consolidated
+```
+
+Its decay constant increases → becomes persistent knowledge.
+
+---
+
+## 5️⃣ Conflict Resolution Over Time
+
+Two fields (F_a, F_b) competing:
+
+Temporal rule:
+
+```
+dominant = argmax_i (p_i(t) c_i(t))
+```
+
+So authority is dynamic.
+
+---
+
+## 6️⃣ Stability Guarantee
+
+Temporal arbitration ensures:
+
+* no infinite old influence
+* no permanent oscillation
+* system adapts
+
+---
+
+## 7️⃣ Transport Encoding
+
+Lane metadata carries:
+
+```
+timestamp
+decay_tau
+field_age
+phase_id
+```
+
+So replay reconstructs authority evolution.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+Field authority is a function of time via decay, refresh, and phase gating.
+```
+
+```
+Persistent fields emerge through repeated reinforcement, not initial magnitude.
+```
+
+---
+
+## 🧠 Interpretation
+
+You’ve now defined:
+
+| Dimension | Governance              |
+| --------- | ----------------------- |
+| Space     | Multi-field arbitration |
+| Time      | Temporal arbitration    |
+
+Together, they form a **dynamical authority system**, not static rules.
+
+---
+
+Next logical extension would be **meta-arbitration** — how the system learns to adjust τ, priorities, and phase factors itself.
+
+---
+
+# 🧠 META-ARBITRATION (MA v1)
+
+We are now in the **self-governing layer** — the system that regulates how all the other regulators behave.
+
+You already defined:
+
+* **MFA** → how forces compete in space
+* **TA** → how forces evolve over time
+
+**Meta-arbitration (MA)** governs:
+
+> How the system adjusts priorities, decay rates, and authority rules based on outcomes.
+
+This is not another force. This is **policy adaptation law**.
+
+---
+
+## 0️⃣ What MA controls
+
+MA adjusts parameters of arbitration:
+
+| Parameter              | Meaning                |
+| ---------------------- | ---------------------- |
+| p_i                    | base priority of field |
+| τ_i                    | decay constant         |
+| phase_factor_i         | phase influence        |
+| λ_i                    | confidence scaling     |
+| field type transitions | short → long memory    |
+
+These are no longer constants. They become **state variables**.
+
+---
+
+## 1️⃣ Feedback Signal
+
+Meta-arbitration uses system-level signals:
+
+| Signal              | Source                                           |
+| ------------------- | ------------------------------------------------ |
+| error               | mismatch between predicted vs actual transitions |
+| stability           | oscillation / divergence detection               |
+| success             | task completion                                  |
+| legality violations | constraint hits                                  |
+| entropy             | uncertainty measure                              |
+
+Define meta loss:
+
+```
+L_meta = α · error + β · instability + γ · constraint_hits - δ · success
+```
+
+---
+
+## 2️⃣ Parameter Adaptation Law
+
+Each arbitration parameter (θ) updates slowly:
+
+```
+θ(t+1) = θ(t) - η ∂L_meta / ∂θ
+```
+
+This tunes:
+
+* how fast fields decay
+* how strong symbolic vs Micronaut influence is
+* which phase dominates
+
+---
+
+## 3️⃣ Authority Reinforcement
+
+If a field consistently leads to success:
+
+```
+success_i ↑ ⇒ p_i ↑, τ_i ↑
+```
+
+If it causes instability:
+
+```
+instability_i ↑ ⇒ p_i ↓, τ_i ↓
+```
+
+So authority is earned.
+
+---
+
+## 4️⃣ Phase Schedule Learning
+
+System can learn phase durations:
+
+If perception stage insufficient:
+
+```
+error_early ↑ ⇒ phase_perception ↑
+```
+
+If overthinking detected:
+
+```
+latency ↑ ⇒ reasoning_phase ↓
+```
+
+---
+
+## 5️⃣ Safety Guard
+
+Meta-arbitration cannot modify:
+
+* legality fields
+* invariant symbolic constraints
+
+Hard boundary:
+
+```
+θ ∈ modifiable set only
+```
+
+---
+
+## 6️⃣ Transport Encoding
+
+Meta state packed as:
+
+```
+meta_params:
+  priority_table
+  decay_constants
+  phase_schedule
+  learning_rate
+meta_version
+```
+
+Ensures replay determinism.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+Arbitration parameters are adaptive, governed by a meta-loss derived from system stability, success, and legality signals.
+```
+
+```
+Authority emerges from demonstrated usefulness over time.
+```
+
+---
+
+## 🧠 Big Picture
+
+You now have **three layers of governance**:
+
+| Layer | Role                                 |
+| ----- | ------------------------------------ |
+| MFA   | resolves forces in space             |
+| TA    | evolves forces over time             |
+| MA    | evolves the rules that govern forces |
+
+That makes the system:
+
+> **Self-stabilizing, self-prioritizing, but still law-bounded**
+
+---
+
+Next level (if you want to go there) is **meta-stability guarantees** — proving MA cannot cause runaway priority inflation or collapse.
