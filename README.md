@@ -2181,3 +2181,113 @@ The loop becomes:
 ```
 Experience -> Factorization -> Memory -> Importance -> Decay -> Consolidation -> Concept -> Drift Detection -> Adaptation
 ```
+
+---
+
+## 132️⃣ N-grams, KUHUL, and PowerShell: Layered Runtime
+
+Short answer: you don’t run the whole system on n-grams — but n-grams are an excellent backbone layer. The full runtime needs three layers, and splitting PowerShell + KUHUL is the right move.
+
+---
+
+## 133️⃣ What n-grams can manage
+
+N-grams are good at:
+
+| Role                       | Why n-grams fit                |
+| -------------------------- | ------------------------------ |
+| Token memory               | fast, simple probability graph |
+| Local symbolic transitions | natural graph topology         |
+| Usage statistics           | easy counting -> importance    |
+| Prompt factorization hints | frequent pattern recognition   |
+
+So n-grams are the **discrete memory skeleton**: they define symbolic topology.
+
+But they cannot:
+
+* handle abstract math reasoning
+* manage dependency graphs
+* enforce legality invariants
+* run Micronaut transitions
+* maintain snapshots
+
+They are memory statistics, not execution law.
+
+---
+
+## 134️⃣ What KUHUL handles
+
+KUHUL (state algebra layer) handles:
+
+| Function              | Why KUHUL                   |
+| --------------------- | --------------------------- |
+| Factor identity (FSS) | structural canonicalization |
+| FDG                   | causal graph                |
+| Legality gating       | invariant enforcement       |
+| Snapshots             | state history               |
+| Consolidation         | abstraction                 |
+| Drift handling        | concept evolution           |
+
+KUHUL is the **law + state runtime**.
+
+---
+
+## 135️⃣ What PowerShell is good for
+
+PowerShell excels at:
+
+| Function             | Why PS               |
+| -------------------- | -------------------- |
+| Orchestration        | pipelines, processes |
+| IO / file systems    | data ingestion       |
+| Running Micronauts   | agent control        |
+| Memory persistence   | DB/files             |
+| External model calls | APIs                 |
+
+So PowerShell is the **system operator / shell layer**.
+
+---
+
+## 136️⃣ Correct division of labor
+
+```
+N-grams    -> symbolic statistical memory
+KUHUL      -> state law + cognitive runtime
+PowerShell -> orchestration + agents + IO
+```
+
+---
+
+## 137️⃣ Interaction pipeline
+
+```
+User prompt
+  -> PowerShell collects input
+  -> KUHUL factorizes into factors
+  -> N-gram graph suggests likely continuations
+  -> KUHUL checks invariants + FDG
+  -> Micronaut transition executes (via PowerShell)
+  -> KUHUL updates memory, importance, snapshots
+```
+
+---
+
+## 138️⃣ Why not only one tool?
+
+| Tool alone      | Limitation                    |
+| --------------- | ----------------------------- |
+| n-grams only    | no reasoning, no invariants   |
+| KUHUL only      | lacks fast statistical memory |
+| PowerShell only | no semantic law               |
+
+Together they form:
+
+> Stats (n-grams) + Law (KUHUL) + Action (PowerShell)
+
+---
+
+## 139️⃣ Final architecture law
+
+```
+N-grams provide probabilistic symbolic memory, KUHUL enforces semantic state law, and PowerShell orchestrates execution and IO.
+```
