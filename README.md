@@ -3961,3 +3961,1091 @@ This transforms your system into:
 ---
 
 Next natural step would be **proof composition** — how multiple step-proofs merge into episode-level or shard-level proofs.
+
+---
+
+# 🧱 SCX Proof Transport Law (SPT v1)
+
+Minimal, composable, SCX-native byte layouts for **Link**, **EPO**, **SPO**, and **MPO** proofs. The layouts are mode-agnostic across **SCXQ2** and **SCXQ4**, with **zero semantic drift**.
+
+## 0️⃣ Design Constraints
+
+1. Must fit in SCX lane payloads
+2. Self-delimiting
+3. Hash-stable
+4. Stream-composable
+5. No implicit structure
+6. Mode-agnostic (Q2/Q4)
+
+All proof objects share:
+
+```
+[Type | Version | Length | Body]
+```
+
+---
+
+## 1️⃣ Shared Header (all proof objects)
+
+| Field   | Size              | Notes                                   |
+| ------- | ----------------- | --------------------------------------- |
+| Type    | 1B                | 0xA1=Link, 0xA2=EPO, 0xA3=SPO, 0xA4=MPO |
+| Version | 1B                | =0x01                                   |
+| BodyLen | 2B (Q2) / 4B (Q4) | length of body                          |
+
+This is SCXQ2/Q4 compatible.
+
+---
+
+## 🔗 2️⃣ LINK (Step Proof)
+
+Minimal data needed to verify one transition.
+
+### Body Layout
+
+| Field     | Size          |
+| --------- | ------------- |
+| h_prev    | 32B           |
+| h_next    | 32B           |
+| meta_hash | 32B           |
+| arb_hash  | 32B           |
+| flags     | 1B            |
+| sig_len   | 1B            |
+| signature | sig_len bytes |
+
+### Notes
+
+* 32B hashes = SHA-256 or BLAKE3 truncated
+* arb_hash commits to arbitration inputs (fields, weights, projections)
+* flags = legality projection, normalization mode, etc.
+
+---
+
+## 📖 3️⃣ EPO (Episode Proof)
+
+Represents Merkle commitment to many Links.
+
+### Body Layout
+
+| Field          | Size    |
+| -------------- | ------- |
+| h_start        | 32B     |
+| h_end          | 32B     |
+| step_count     | 4B      |
+| root_hash      | 32B     |
+| meta_root_hash | 32B     |
+| sig_len        | 1B      |
+| signature      | sig_len |
+
+This is small regardless of episode size.
+
+---
+
+## 🧩 4️⃣ SPO (Shard Proof)
+
+Same as EPO but scoped to index range.
+
+### Body Layout
+
+| Field       | Size    |
+| ----------- | ------- |
+| h_start     | 32B     |
+| h_end       | 32B     |
+| index_start | 4B      |
+| index_end   | 4B      |
+| root_hash   | 32B     |
+| sig_len     | 1B      |
+| signature   | sig_len |
+
+---
+
+## 🔀 5️⃣ MPO (Merge Proof)
+
+Proof that two branches legally merged.
+
+### Body Layout
+
+| Field           | Size    |
+| --------------- | ------- |
+| h_left          | 32B     |
+| h_right         | 32B     |
+| root_left       | 32B     |
+| root_right      | 32B     |
+| merge_mode      | 1B      |
+| conflict_hash   | 32B     |
+| resolution_hash | 32B     |
+| h_merged        | 32B     |
+| sig_len         | 1B      |
+| signature       | sig_len |
+
+---
+
+## 🧠 6️⃣ Packing into SCX Lanes
+
+Proof objects are payloads inside **SCX Domain = PROOF (0x0F)**.
+
+### SCXQ2 lane
+
+| Field      | Size         |
+| ---------- | ------------ |
+| Domain     | 1B           |
+| Opcode     | 2B           |
+| Flags      | 1B           |
+| TargetID   | 4B           |
+| PayloadLen | 2B           |
+| Payload    | proof object |
+
+### SCXQ4 lane
+
+Same but:
+
+* TargetID = 8B
+* PayloadLen = 4B
+
+Proof byte layout inside payload **does not change**.
+
+---
+
+## 🔐 7️⃣ Hash Stability Law
+
+Proof hash = HASH(entire payload bytes exactly as stored)
+
+No canonicalization, no reordering.
+
+---
+
+## 🔒 Freeze-Level Law (SPT v1)
+
+```
+All proof objects are self-contained byte structures with a shared header and fixed hash field sizes, designed to embed directly as SCX lane payloads without transformation.
+```
+
+```
+Proof composition uses Merkle roots and endpoint hashes only; inner steps are referenced by inclusion proofs, not inlined.
+```
+
+---
+
+# 🧹 Proof Garbage Collection (PGC v1)
+
+Reduce storage of historical proofs while preserving verifiability of current state.
+
+## 🧠 1️⃣ Principle
+
+We never delete **authority**.
+We only delete **detail once its effects are committed**.
+
+That means:
+
+* Keep *state commitments*
+* Discard *intermediate receipts*
+
+---
+
+## 🧱 2️⃣ Three Proof Layers
+
+| Layer           | Purpose                  | GC Eligible?    |
+| --------------- | ------------------------ | --------------- |
+| Link (step)     | fine-grained transitions | YES             |
+| Episode/Shard   | Merkle commitment        | SOMETIMES       |
+| Merge/Fork      | topology history         | NO (compressed) |
+| Snapshot Anchor | checkpoint state         | NEVER           |
+
+---
+
+## 🧾 3️⃣ Snapshot Anchor (the GC root)
+
+At intervals, produce:
+
+```
+SNAP {
+  h_state
+  proof_root_history
+  meta_hash
+  timestamp
+  sig
+}
+```
+
+This anchor says:
+
+> “Everything before this hash has already been validated.”
+
+This becomes the **new trust base**.
+
+---
+
+## 🗑️ 4️⃣ Step Proof GC Rule
+
+If a Link is covered by a Merkle root that is itself anchored in a SNAP:
+
+```
+Link_t ⊂ Root_episode ⊂ SNAP
+```
+
+Then Link_t may be deleted.
+
+You only keep:
+
+* the Merkle root
+* the snapshot anchor
+
+---
+
+## 📦 5️⃣ Episode/Shard Compression
+
+Old episodes can be collapsed:
+
+```
+R_episode_1, R_episode_2, ..., R_episode_n
+→ R_archive = MerkleRoot({R_episode_i})
+```
+
+Store only:
+
+```
+ARCHIVE {
+  R_archive
+  episode_count
+  range
+  sig
+}
+```
+
+Delete individual episode proofs.
+
+---
+
+## 🔀 6️⃣ Fork/Merge Retention
+
+Forks and merges define **causal topology**, so we cannot drop them.
+
+But we can **compress branch subtrees**:
+
+Replace full subtree with:
+
+```
+BRANCH_ARCHIVE {
+  h_root
+  R_subtree
+  branch_count
+  sig
+}
+```
+
+Topology preserved, detail gone.
+
+---
+
+## 🧮 7️⃣ Replay Guarantee
+
+After GC, you can still prove:
+
+```
+h_old → h_now
+```
+
+by:
+
+* chain of archive roots
+* snapshot anchors
+* merge/fork topology
+
+But you cannot replay micro-steps — only verify macro-commitments.
+
+This is acceptable.
+
+---
+
+## 🔄 8️⃣ Safe GC Condition
+
+GC is allowed only if:
+
+1. State is snapshotted
+2. All proofs up to snapshot are committed in a root
+3. Snapshot signed by authority
+
+---
+
+## 🔒 Freeze-Level Law (PGC v1)
+
+```
+Proofs may be deleted once their validity is committed into a signed snapshot anchor via Merkle root inclusion.
+```
+
+```
+Only topology-changing proofs (forks/merges) and snapshot anchors are permanently retained.
+```
+
+---
+
+## 🧠 Intuition
+
+| Without PGC           | With PGC                 |
+| --------------------- | ------------------------ |
+| Infinite proof growth | Logarithmic proof growth |
+| Full replay always    | Macro replay only        |
+| Huge storage          | Compact trust chain      |
+
+PGC makes your system:
+
+> **Historically provable, but not historically bloated**
+
+---
+
+# ⏳ Proof Expiry & Trust Horizons (PETH v1)
+
+Define how long proofs remain authoritative and how trust compresses over time.
+
+## 🧠 1️⃣ Core Idea
+
+Not all past proofs are equally relevant forever.
+
+We distinguish:
+
+| Concept             | Meaning                                     |
+| ------------------- | ------------------------------------------- |
+| **Proof validity**  | cryptographic + logical correctness         |
+| **Proof authority** | whether it must still be retained for trust |
+| **Trust horizon**   | how far back proofs must be kept            |
+
+Proofs don’t become *false*.
+They become **non-authoritative beyond a horizon**.
+
+---
+
+## 📏 2️⃣ Trust Horizon Definition
+
+For each system or domain:
+
+```
+H = max number of historical snapshots required for trust
+```
+
+Examples:
+
+| System                  | Horizon  |
+| ----------------------- | -------- |
+| Real-time agent runtime | short    |
+| Safety-critical system  | long     |
+| Archival computation    | infinite |
+
+---
+
+## 🧾 3️⃣ Expiry Rule
+
+A snapshot anchor (SNAP_t) can expire if:
+
+1. There exists a later snapshot (SNAP_{t+k})
+2. All state reachable from (SNAP_t) has been subsumed
+3. No unresolved forks reference it
+4. (k > H)
+
+Then:
+
+```
+SNAP_t → ARCHIVE_SUMMARY
+```
+
+Only its Merkle commitment retained.
+
+---
+
+## 🔄 4️⃣ Trust Compression Over Time
+
+As history ages:
+
+| Stage   | Stored                     |
+| ------- | -------------------------- |
+| Recent  | full step + episode proofs |
+| Mid     | episode roots only         |
+| Old     | archive roots              |
+| Ancient | single super-root          |
+
+Trust becomes hierarchical:
+
+```
+Recent trust > Mid trust > Historical commitment
+```
+
+---
+
+## ⚖️ 5️⃣ Authority Decay
+
+Proof authority weight decays:
+
+```
+A(t) = e^{-t / τ_trust}
+```
+
+Older proofs remain valid, but are less relevant for arbitration.
+
+This affects:
+
+* meta learning influence
+* memory importance
+* branch weighting
+
+---
+
+## 🔐 6️⃣ Horizon Anchors
+
+Certain anchors are **non-expiring**:
+
+| Anchor Type            | Reason           |
+| ---------------------- | ---------------- |
+| Genesis snapshot       | defines universe |
+| Security epoch markers | key rotations    |
+| Protocol upgrades      | rule boundaries  |
+
+These form the **eternal trust backbone**.
+
+---
+
+## 🧮 7️⃣ Security Implication
+
+If an attack tries to alter very old history:
+
+System only needs to check back to horizon boundary.
+
+Older than that is committed to super-root.
+
+This bounds verification cost.
+
+---
+
+## 🔒 Freeze-Level Law (PETH v1)
+
+```
+Proof authority decays with time, and only proofs within the active trust horizon must be retained at full granularity.
+```
+
+```
+Older proofs are compressible into hierarchical commitments without breaking verifiability.
+```
+
+```
+Certain system anchors are perpetual and define trust epoch boundaries.
+```
+
+---
+
+## 🧠 Intuition
+
+| Concept          | Analogy                |
+| ---------------- | ---------------------- |
+| Step proofs      | receipts               |
+| Snapshot anchors | audited reports        |
+| Archive roots    | tax filings            |
+| Trust horizon    | statute of limitations |
+
+You don’t need every receipt from 20 years ago —
+just the audited summary.
+
+---
+
+# 🌌 Cross-Universe Trust Bridging (CUTB v1)
+
+How two independent SCX universes exchange state/proofs **without either becoming authoritative inside the other**.
+
+## 0️⃣ Definitions
+
+* **Universe U**: a SCX authority domain with its own:
+  * `genesis_anchor` (root snapshot)
+  * key schedule / epochs
+  * legality gates + arbitration rules
+  * proof roots + trust horizon
+  * lane mode (SCXQ2/SCXQ4)
+* **Bridge**: a treaty object that defines what can flow between universes and how it’s verified.
+
+Goal: allow **imported claims** to be **provable, scoped, replayable, and non-escalating**.
+
+---
+
+## 1️⃣ The Bridge Treaty Object
+
+A single immutable object both sides can store:
+
+```
+BRIDGE_TREATY {
+  treaty_id
+  U_A: { universe_id, genesis_hash, pubkeys_root }
+  U_B: { universe_id, genesis_hash, pubkeys_root }
+
+  allowed_domains: [PROOF, FACTOR, NGRAM, BRIDGE_FIELD, ...]
+  forbidden_domains: [EXECUTION, KERNEL_MUTATION, ...]   // default deny
+
+  trust_horizon_policy:
+    require_anchor_within: N_snapshots
+    require_epoch_boundaries: true
+
+  translation:
+    signature_map_mode: {pass, remap, dual}
+    namespace_prefixing: true
+    opcode_namespace: "bridge.opcode.map.v1"
+
+  authority:
+    capability_tokens_required: true
+    capability_schema: "cap://bridge/cap.v1"
+
+  revocation:
+    treaty_revocation_root
+    key_rotation_rules
+
+  sig_A
+  sig_B
+}
+```
+
+**Core law:** everything is allowlisted. Nothing is implicitly executable.
+
+---
+
+## 2️⃣ Bridge Packet (the thing that travels)
+
+A Bridge Packet carries claims plus the proof chain necessary to verify them within the other universe’s horizon.
+
+```
+BRIDGE_PACKET {
+  from_universe: U_A
+  to_universe:   U_B
+  packet_id
+  epoch_id
+  lane_mode: SCXQ2|SCXQ4
+
+  claims: [
+    CLAIM { type, payload_ref, payload_hash, claim_scope, ttl }
+  ]
+
+  proof_bundle: {
+    anchor: SNAP_A_k
+    roots:  [EPO/SPO/ARCHIVE roots...]
+    merge_fork_topology: [MPO/FPO if needed]
+    inclusion_proofs: [Merkle paths for referenced roots]
+  }
+
+  capabilities: [cap_token...]
+  sig_from
+}
+```
+
+claim_scope is critical: “observation”, “feature”, “statistic”, “model shard”, “proof only”, etc.
+
+---
+
+## 3️⃣ Import Semantics: “Foreign Claims Are Not State”
+
+When U_B receives a packet from U_A:
+
+* It **does not** merge U_A’s state.
+* It creates a local object:
+
+```
+FOREIGN_CLAIM {
+  source_universe: U_A
+  claim_id
+  payload_hash
+  verified: true|false
+  treaty_id
+  scope
+  confidence
+  expiry
+  attached_proofs_root
+}
+```
+
+B can reference FOREIGN_CLAIM in reasoning, but it’s not native state unless explicitly promoted.
+
+This prevents history injection.
+
+---
+
+## 4️⃣ Verification Pipeline (must be deterministic)
+
+1. **Treaty check**
+   * treaty exists
+   * signatures valid
+   * domains allowlisted
+   * capability requirements met
+2. **Anchor check**
+   * packet contains a SNAP anchor within A’s required horizon policy
+   * anchor signature verifies against A’s pubkeys_root (treaty-pinned)
+   * epoch_id is valid, not revoked
+3. **Root + inclusion checks**
+   * verify EPO/SPO/ARCHIVE signatures
+   * verify Merkle inclusions for any referenced Link/MPO/etc.
+4. **Claim binding**
+   * ensure payload_hash is committed by verified roots
+   * ensure TTL and scope constraints satisfied
+
+If any step fails → packet is quarantined (stored but non-authoritative).
+
+---
+
+## 5️⃣ Namespace & Signature Mapping (no collisions)
+
+Two universes may use identical factor signatures internally. Bridging must avoid accidental aliasing.
+
+### Namespace prefixing (mandatory)
+
+Foreign signatures are wrapped:
+
+```
+σ_B(foreign) = H("U_A" || σ_A || treaty_id)
+```
+
+So U_B never confuses foreign factor IDs with native ones.
+
+### Dual signature mode (optional)
+
+Store both:
+
+* original σ_A (for audits)
+* mapped σ_B(foreign) (for local graph references)
+
+---
+
+## 6️⃣ Opcode Namespace Law (no opcode confusion)
+
+Bridge packets carry only opcodes from an allowlisted namespace:
+
+* bridge.opcode.map.v1
+
+If A uses internal opcodes, they must be translated into bridge-opcodes that are non-executing on B’s side unless explicitly enabled.
+
+Default: proof/claim ingestion is data-only.
+
+---
+
+## 7️⃣ Promotion: turning a claim into native knowledge
+
+Promotion is an explicit step with local legality gates:
+
+```
+PROMOTE_FOREIGN {
+  foreign_claim_id
+  target_domain: FACTOR|NGRAM|BRIDGE_FIELD|...
+  transform: { ruleset_id }
+  required_local_checks: [legality, drift, policy]
+  result_native_object_hash
+  sig_local_authority
+}
+```
+
+Without promotion, foreign remains read-only evidence.
+
+---
+
+## 8️⃣ Quarantine & Dispute Objects
+
+If B detects contradictions:
+
+```
+DISPUTE {
+  foreign_claim_id
+  reason_code
+  counter_evidence_hash
+  local_snapshot_hash
+  sig_B
+}
+```
+
+This allows explicit disagreement objects, audit replay, and safe federation without silent corruption.
+
+---
+
+## 9️⃣ Key Rotation & Revocation (epoch stability)
+
+Treaty pins a pubkeys_root and a revocation root. Packets must reference an epoch key that is:
+
+* present in pubkeys_root
+* not revoked
+* within treaty’s epoch window
+
+This prevents replay with old compromised keys.
+
+---
+
+## 🔒 CUTB v1 Invariants
+
+1. **No implicit execution**
+   * bridged artifacts are data + proofs unless explicitly promoted
+2. **No identity collision**
+   * foreign factor IDs are namespaced and hashed into local space
+3. **Horizon-bounded verification**
+   * only proofs within treaty-defined horizon are required
+4. **Explicit topology**
+   * forks/merges must be carried as MPO/FPO (or summarized roots) to be meaningful
+5. **Revocable trust**
+   * epoch keys and treaties can be revoked without rewriting history
+
+---
+
+## Minimal Implementation Stack
+
+* **PowerShell**: transport + IO + packet bundling + signature ops + lane pack/unpack
+* **KUHUL**: treaty enforcement, legality gates, promotion rules, and proof verification policy
+
+---
+
+# 🧭 SCX Cross-Universe Payload Law (CUPL v1)
+
+Wire-level transport types for cross-universe bridging. All objects below are lane payloads inside:
+
+```
+Domain = 0x0F (PROOF/BRIDGE domain)
+```
+
+Shared object header:
+
+| Field   | Size              |
+| ------- | ----------------- |
+| Type    | 1B                |
+| Version | 1B                |
+| BodyLen | 2B (Q2) / 4B (Q4) |
+
+---
+
+## 🧭 Payload Type Map
+
+| Type | Meaning         |
+| ---- | --------------- |
+| 0xB1 | BRIDGE_TREATY   |
+| 0xB2 | BRIDGE_PACKET   |
+| 0xB3 | FOREIGN_CLAIM   |
+| 0xB4 | PROMOTE_FOREIGN |
+| 0xB5 | DISPUTE         |
+
+---
+
+## 🌌 0xB1 — BRIDGE_TREATY
+
+Defines trust boundary between universes.
+
+### Body Layout
+
+| Field                   | Size |
+| ----------------------- | ---- |
+| treaty_id               | 16B  |
+| U_A_genesis_hash        | 32B  |
+| U_A_pubkey_root         | 32B  |
+| U_B_genesis_hash        | 32B  |
+| U_B_pubkey_root         | 32B  |
+| allowed_domain_mask     | 4B   |
+| forbidden_domain_mask   | 4B   |
+| trust_horizon_snapshots | 4B   |
+| translation_flags       | 2B   |
+| capability_schema_hash  | 32B  |
+| revocation_root_hash    | 32B  |
+| sigA_len                | 1B   |
+| sigA                    | var  |
+| sigB_len                | 1B   |
+| sigB                    | var  |
+
+---
+
+## 📦 0xB2 — BRIDGE_PACKET
+
+Transport container for claims + proofs.
+
+### Body Layout
+
+| Field              | Size |
+| ------------------ | ---- |
+| from_universe_hash | 32B  |
+| to_universe_hash   | 32B  |
+| packet_id          | 16B  |
+| epoch_id           | 4B   |
+| lane_mode          | 1B   |
+| claim_count        | 2B   |
+| proof_root_hash    | 32B  |
+| anchor_hash        | 32B  |
+| capability_count   | 1B   |
+| flags              | 2B   |
+
+Followed by variable sections:
+
+```
+CLAIM_REF[claim_count]
+CAPABILITY_TOKENS
+INCLUSION_PROOFS
+signature
+```
+
+### CLAIM_REF structure
+
+| Field        | Size |
+| ------------ | ---- |
+| claim_type   | 1B   |
+| claim_scope  | 1B   |
+| payload_hash | 32B  |
+| ttl          | 4B   |
+
+---
+
+## 🧾 0xB3 — FOREIGN_CLAIM
+
+Local representation of imported claim.
+
+### Body Layout
+
+| Field                | Size |
+| -------------------- | ---- |
+| source_universe_hash | 32B  |
+| treaty_id            | 16B  |
+| claim_id_hash        | 32B  |
+| payload_hash         | 32B  |
+| scope                | 1B   |
+| verified_flag        | 1B   |
+| confidence           | 2B   |
+| expiry_time          | 4B   |
+| proof_root_hash      | 32B  |
+| sig_len              | 1B   |
+| signature            | var  |
+
+---
+
+## 🔁 0xB4 — PROMOTE_FOREIGN
+
+Conversion of foreign claim into native state.
+
+### Body Layout
+
+| Field                | Size |
+| -------------------- | ---- |
+| foreign_claim_hash   | 32B  |
+| target_domain        | 1B   |
+| transform_rules_hash | 32B  |
+| legality_check_hash  | 32B  |
+| result_native_hash   | 32B  |
+| local_snapshot_hash  | 32B  |
+| sig_len              | 1B   |
+| signature            | var  |
+
+---
+
+## ⚖️ 0xB5 — DISPUTE
+
+Represents disagreement object.
+
+### Body Layout
+
+| Field                 | Size |
+| --------------------- | ---- |
+| foreign_claim_hash    | 32B  |
+| reason_code           | 2B   |
+| counter_evidence_hash | 32B  |
+| local_snapshot_hash   | 32B  |
+| sig_len               | 1B   |
+| signature             | var  |
+
+---
+
+## 🔧 Lane Integration (Q2/Q4)
+
+These payloads are inserted directly as:
+
+### SCXQ2
+
+| Field      | Size        |
+| ---------- | ----------- |
+| Domain     | 1B          |
+| Opcode     | 2B          |
+| Flags      | 1B          |
+| TargetID   | 4B          |
+| PayloadLen | 2B          |
+| Payload    | CUPL object |
+
+### SCXQ4
+
+Same, but:
+
+* TargetID = 8B
+* PayloadLen = 4B
+
+Payload structure remains identical.
+
+---
+
+## 🔒 CUPL v1 Freeze Law
+
+```
+Cross-universe trust objects are transported as fixed-structure payload types inside SCX lanes under the PROOF domain, with no semantic transformation between Q2 and Q4 modes.
+```
+
+```
+All foreign trust data is hash-identified, namespace-bound, and non-executable unless explicitly promoted.
+```
+
+---
+
+# 🛡 Bridge Fault Containment (BFC v1)
+
+Cross-universe bridging is powerful, but if one universe becomes compromised, malicious, corrupted, drifting, or unstable, containment must isolate it without collapsing the federation.
+
+## 🧠 Core Goal
+
+Prevent faults in Universe A from propagating into Universe B’s trust or execution.
+
+A bridge is **not shared sovereignty**. It is a **firewalled verification channel**.
+
+---
+
+## 1️⃣ Fault Model
+
+We assume a foreign universe may:
+
+| Fault                         | Effect               |
+| ----------------------------- | -------------------- |
+| Sign bad proofs               | cryptographic misuse |
+| Inject illegal claims         | logic violation      |
+| Drift from its own invariants | semantic corruption  |
+| Fork maliciously              | history manipulation |
+| Go offline                    | liveness failure     |
+
+BFC ensures none of these destabilize B.
+
+---
+
+## 2️⃣ Quarantine Boundary
+
+All incoming bridge packets land in **QUARANTINE STATE** first.
+
+```
+FOREIGN_CLAIM.state ∈ {quarantined, verified, promoted, rejected}
+```
+
+Only verified can be referenced.
+Only promoted can affect native state.
+
+No direct execution ever.
+
+---
+
+## 3️⃣ Trust Tier Degradation
+
+If anomaly rate rises:
+
+```
+fault_score(A) ↑ ⇒ trust_tier(A) ↓
+```
+
+| Tier             | Allowed                    |
+| ---------------- | -------------------------- |
+| Tier 0 (trusted) | all allowlisted domains    |
+| Tier 1           | proofs + passive data only |
+| Tier 2           | proofs only                |
+| Tier 3           | frozen (no new packets)    |
+
+Automatic downgrade, never upgrade without manual re-treaty.
+
+---
+
+## 4️⃣ Fault Detection Signals
+
+| Signal                  | Source               |
+| ----------------------- | -------------------- |
+| invalid proofs          | PCA verifier         |
+| signature mismatch      | key checks           |
+| legality violation      | local legality gates |
+| statistical drift       | NEB divergence       |
+| proof topology mismatch | MPO/FPO checks       |
+
+---
+
+## 5️⃣ Containment Actions
+
+When threshold exceeded:
+
+1. Freeze treaty channel
+2. Mark foreign claims as non-authoritative
+3. Stop promotion
+4. Retain only historical commitments
+5. Emit FAULT_EVENT
+
+```
+FAULT_EVENT {
+  universe_id
+  reason_code
+  offending_hash
+  snapshot_hash
+  sig_local
+}
+```
+
+---
+
+## 6️⃣ Historical Immunity Law
+
+Previously validated anchors remain valid.
+
+```
+SNAP_old remains authoritative
+```
+
+But future claims from A no longer accepted.
+
+No retroactive corruption.
+
+---
+
+## 7️⃣ Bridge Revocation
+
+Treaty can be revoked:
+
+```
+BRIDGE_REVOKE {
+  treaty_id
+  revocation_reason
+  last_valid_anchor
+  sig_local
+}
+```
+
+After revocation:
+
+* only archive proofs accepted
+* no live exchange
+
+---
+
+## 8️⃣ Federation Stability Guarantee
+
+Fault in A results in:
+
+| A           | B         |
+| ----------- | --------- |
+| corrupted   | safe      |
+| compromised | safe      |
+| offline     | safe      |
+| malicious   | contained |
+
+Bridge failure never causes systemic collapse.
+
+---
+
+## 🔒 Freeze-Level Law (BFC v1)
+
+```
+Foreign universes are treated as untrusted by default; trust is earned per packet and can be degraded or revoked without affecting native authority.
+```
+
+```
+Fault containment isolates bridge channels without retroactively invalidating previously anchored commitments.
+```
+
+---
+
+## 🧠 Intuition
+
+| System     | Role                    |
+| ---------- | ----------------------- |
+| Treaty     | firewall rules          |
+| Quarantine | DMZ                     |
+| Promotion  | import under inspection |
+| Revocation | kill switch             |
+| Snapshots  | historical audit base   |
+
+Your federation behaves like:
+
+> **Air-gapped trust zones with controlled proof exchange**
