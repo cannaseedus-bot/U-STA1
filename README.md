@@ -1062,3 +1062,702 @@ Micronauts operate on G and V. The math engine operates on F.
 > Prompts are factorizations of desired state, not imperative commands.
 
 > State is reused if structurally identical; new state is created only when necessary.
+
+---
+
+## 49️⃣ Factor Signature System (FSS v1)
+
+To prevent duplicate meaning across prompts, math reasoning, Micronaut transitions, and packed lanes, each factor gets a **canonical structural signature**. This is **structural identity**, not string equality.
+
+### Factor object model
+
+A factor f is:
+
+```
+f = (type, structure, attributes)
+```
+
+| Field       | Meaning                                              |
+| ----------- | ---------------------------------------------------- |
+| type        | symbol, expression, relation, constraint, goal, etc. |
+| structure   | canonical tree/graph representation                  |
+| attributes  | domain, units, scope, metadata                       |
+
+---
+
+## 50️⃣ Canonical structural form
+
+Before hashing, every factor is normalized.
+
+Normalization rules:
+
+| Rule                        | Example             |
+| --------------------------- | ------------------- |
+| sort commutative operands   | a+b = b+a           |
+| reduce constants            | 2+2 -> 4            |
+| canonical variable ordering | 3x+2y (not 2y+3x)   |
+| normalize relation forms    | a=b (not b=a)       |
+| flatten associative trees   | (a+b)+c -> a+b+c    |
+
+This ensures equivalent factors share the same structure.
+
+---
+
+## 51️⃣ Signature function
+
+Signature is a hash of canonical structure + type:
+
+```
+sigma(f) = H(type || canonical_structure || attributes)
+```
+
+H is a cryptographic hash. This gives a **content-addressed semantic ID**.
+
+---
+
+## 52️⃣ State reuse law
+
+When injecting a factor:
+
+```
+lookup(sigma(f)) -> existing state if found
+                   new state otherwise
+```
+
+So prompts never duplicate equivalent objects.
+
+---
+
+## 53️⃣ Signature types
+
+| Factor type  | Structure basis          |
+| ------------ | ------------------------ |
+| Symbol       | name + scope             |
+| Expression   | AST tree                 |
+| Relation     | graph tuple              |
+| Constraint   | relation + predicate     |
+| Goal         | operation + targets      |
+
+Each type has its own canonicalizer.
+
+---
+
+## 54️⃣ Transport across lanes
+
+When compressed into SCX lanes:
+
+```
+[Header | Domain=Factor | Signature | Payload]
+```
+
+Signature survives compression, so independent systems can merge state safely.
+
+---
+
+## 55️⃣ Collision handling
+
+If a hash collision occurs (rare):
+
+* verify canonical structure equality
+* otherwise treat as distinct
+
+---
+
+## 56️⃣ Benefits
+
+| Problem                     | Solved by                  |
+| --------------------------- | -------------------------- |
+| duplicate variable creation | signature reuse            |
+| prompt merging              | structural identity        |
+| distributed consistency     | content-addressed state    |
+| compression safety          | signature survives packing |
+
+---
+
+## 57️⃣ Freeze-level law
+
+```
+Factor identity is determined by canonical structural form, not textual appearance.
+```
+
+```
+sigma(f1) = sigma(f2) -> f1 ≡ f2
+```
+
+This makes the system symbolically stable, encoding-independent, compression-safe, and prompt-compatible.
+
+---
+
+## 58️⃣ Factor Dependency Graph (FDG v1)
+
+The Factor Dependency Graph captures **causality of meaning**: if one factor changes, what else must update?
+
+```
+D = (F, E)
+```
+
+* F = set of factors
+* E ⊆ F x F = dependency edges
+
+---
+
+## 59️⃣ Edge meaning
+
+An edge:
+
+```
+f_i -> f_j
+```
+
+means **f_j depends on f_i**. If f_i changes, f_j may need recomputation or invalidation.
+
+---
+
+## 60️⃣ Factor categories
+
+| Type            | Example           | Dependency nature     |
+| --------------- | ----------------- | --------------------- |
+| Symbol          | x                 | atomic                |
+| Expression      | x^2+3x+2           | depends on symbols    |
+| Constraint      | x^2+3x+2=0         | depends on expression |
+| Goal            | solve(...)         | depends on constraint |
+| Derived result  | roots of equation  | depends on goal       |
+
+---
+
+## 61️⃣ Construction rule
+
+When creating a factor f:
+
+1. Parse canonical structure
+2. Identify sub-factors S = {s_1, ..., s_k}
+3. Add edges:
+
+```
+s_i -> f
+```
+
+Example: x^2+3x+2
+
+```
+x -> x^2
+x -> 3x
+x^2 -> expression
+3x -> expression
+2 -> expression
+```
+
+---
+
+## 62️⃣ Change propagation
+
+If factor f is modified or replaced:
+
+1. Mark f as updated
+2. Traverse forward:
+
+```
+Affected(f) = { g | f leads_to g }
+```
+
+3. For each dependent g:
+
+* recompute if derivable
+* invalidate if not
+
+---
+
+## 63️⃣ Graph properties
+
+FDG is:
+
+* Directed
+* Acyclic within algebraic layers (ideally)
+* Layered across semantic levels
+
+Cycles may exist in recursive definitions and are handled via fixed-point evaluation.
+
+---
+
+## 64️⃣ Storage model
+
+Each factor record stores:
+
+```
+signature
+type
+canonical structure
+dependencies: [sigma(s1), sigma(s2), ...]
+dependents: [sigma(g1), sigma(g2), ...]
+```
+
+This makes update traversal O(edges).
+
+---
+
+## 65️⃣ Interaction with Micronauts
+
+Micronauts operate on embedding state and graph transitions, but FDG keeps symbolic reasoning consistent with Micronaut-driven changes.
+
+Example: if a Micronaut updates x, FDG triggers updates to dependent expressions.
+
+---
+
+## 66️⃣ Compression independence
+
+FDG edges reference **signatures**, not memory pointers. After lane packing and transfer:
+
+* dependencies remain resolvable
+* graph structure survives transport
+
+---
+
+## 67️⃣ Freeze-level law
+
+```
+f_i -> f_j  => state(f_j) is invalid if f_i changes
+```
+
+```
+Dependency edges are defined over canonical factor signatures, not storage location.
+```
+
+---
+
+## 68️⃣ Big picture
+
+| Capability                | Result                      |
+| ------------------------- | --------------------------- |
+| Prompt merging            | stable identity             |
+| Symbol reuse              | no duplication              |
+| Consistent math reasoning | auto updates                |
+| Hybrid AI integration     | symbolic + neural coherence |
+
+---
+
+## 69️⃣ Lazy Evaluation + Snapshotting Over FDG
+
+The FDG defines causality; now we define **when** factors compute and **how** state history is stored.
+
+### 1) Factor states
+
+Each factor f has:
+
+| Field   | Meaning                |
+| ------- | ---------------------- |
+| value   | current computed value |
+| status  | clean / dirty / stale  |
+| version | logical timestamp      |
+| deps    | dependencies           |
+| users   | dependents             |
+
+---
+
+## 70️⃣ Lazy evaluation law
+
+A factor is recomputed only when demanded.
+
+```
+Evaluate(f) = value(f)   if status=clean
+            = Compute(f) if status=dirty
+```
+
+---
+
+## 71️⃣ Dirty propagation
+
+When f changes:
+
+1. mark f dirty
+2. for all g with edge f -> g:
+
+```
+status(g) = dirty
+```
+
+No computation happens yet.
+
+---
+
+## 72️⃣ Compute step
+
+When Evaluate(g) is called:
+
+```
+for each dependency d:
+  Evaluate(d)
+recompute g
+mark g clean
+increment version
+```
+
+Evaluation follows the dependency tree only when needed.
+
+---
+
+## 73️⃣ Snapshot model
+
+A snapshot is:
+
+```
+Snapshot_t = (root set of factors, t)
+```
+
+We do not copy full state. We store:
+
+* factor signatures
+* version numbers
+
+The FDG + versions reconstruct state.
+
+---
+
+## 74️⃣ Persistent state via structural sharing
+
+Each factor version is immutable:
+
+```
+f^(v) -> f^(v+1)
+```
+
+Old versions remain for snapshots. This is like Git commits or persistent data structures.
+
+---
+
+## 75️⃣ Snapshot creation
+
+At time t:
+
+```
+snapshot_id = hash({sigma(f), version(f)} for active roots)
+```
+
+Snapshots are cheap references.
+
+---
+
+## 76️⃣ Replay
+
+To reconstruct state:
+
+```
+load snapshot
+for requested factor:
+  evaluate lazily
+```
+
+No eager recomputation.
+
+---
+
+## 77️⃣ Interaction with Micronauts
+
+When a Micronaut modifies f:
+
+```
+mu modifies f
+-> mark f dirty
+-> FDG propagates dirty
+```
+
+Recomputation remains lazy.
+
+---
+
+## 78️⃣ Freeze-level laws
+
+```
+f is recomputed only when its value is demanded and status=dirty
+```
+
+```
+Snapshot = set of factor signatures + version numbers, not full state copy
+```
+
+```
+Factor versions are immutable; new states create new versions
+```
+
+---
+
+## 79️⃣ What this gives you
+
+| Property          | Outcome                         |
+| ----------------- | ------------------------------- |
+| Efficiency        | no unnecessary recompute        |
+| Time-travel       | historical state access         |
+| Determinism       | snapshots reproduce exact state |
+| Distributed merge | version graphs merge cleanly    |
+
+---
+
+## 80️⃣ Factor GC / Eviction Policy (FGC v1)
+
+Snapshots and the FDG must not grow forever. Garbage collection is **law-constrained** so it preserves reproducibility and causal consistency.
+
+---
+
+## 81️⃣ Factor liveness
+
+A factor f is live if:
+
+1. It is reachable from any active snapshot.
+2. It is in the dependency closure of a live factor.
+3. It is pinned (system-critical law, schema, core knowledge).
+
+Formally:
+
+```
+Live = union_{s in Snapshots} Reachable(s.roots)
+```
+
+---
+
+## 82️⃣ Dead factors
+
+A factor is dead if:
+
+```
+f not in Live
+```
+
+Only dead factors can be evicted.
+
+---
+
+## 83️⃣ Version retention rule
+
+We evict **old versions**, not whole factors. Keep:
+
+* latest version
+* versions referenced by snapshots
+* versions needed for branch merges
+
+Delete:
+
+```
+f^(v) where v < oldest_snapshot_ref(f)
+```
+
+---
+
+## 84️⃣ Snapshot compaction
+
+Snapshots form a history DAG. If two snapshots share the same factor versions, they collapse:
+
+```
+snapshot_A == snapshot_B -> merge metadata only
+```
+
+This reduces history duplication.
+
+---
+
+## 85️⃣ Dependency pruning
+
+When a factor version is deleted:
+
+* remove FDG edges referencing it
+* maintain graph consistency
+
+No dangling dependencies allowed.
+
+---
+
+## 86️⃣ Cold storage (optional)
+
+Instead of deletion:
+
+* serialize old factors to compressed archive
+* remove from active memory
+* keep hash reference
+
+So time travel remains possible.
+
+---
+
+## 87️⃣ Micronaut-safe rule
+
+Micronauts may not:
+
+* delete factors directly
+* bypass GC
+
+They only mark factors dirty or create new versions. GC is kernel responsibility.
+
+---
+
+## 88️⃣ Safety invariants
+
+```
+If a snapshot references f^(v), it must remain reconstructible.
+```
+
+```
+GC cannot remove a factor reachable from any live root.
+```
+
+---
+
+## 89️⃣ Practical heuristics
+
+| Policy                          | Purpose                               |
+| ------------------------------- | ------------------------------------- |
+| LRU on unreferenced factors     | free unused memory                    |
+| TTL for transient prompt states | remove short-lived scratch            |
+| Priority pinning                | protect laws, schemas, core knowledge |
+
+---
+
+## 90️⃣ Cycle of state
+
+```
+Create -> Used -> Snapshotted -> Unreferenced -> Archived/Deleted
+```
+
+This mirrors biological memory: working memory, long-term memory, and forgetting.
+
+---
+
+## 91️⃣ Big picture
+
+| Feature         | Cognitive analogy |
+| --------------- | ----------------- |
+| Snapshots       | episodic memory   |
+| FDG             | semantic network  |
+| Lazy evaluation | recall on demand  |
+| GC              | forgetting        |
+
+This yields a deterministic memory system with reversible history and controlled forgetting.
+
+---
+
+## 92️⃣ Memory Importance Scoring (MIS v1)
+
+The system becomes a **self-shaping memory** by scoring which factors deserve to survive.
+
+Each factor f gets an importance weight:
+
+```
+I(f) >= 0
+```
+
+---
+
+## 93️⃣ Importance is multi-factor
+
+Importance combines four signals:
+
+```
+I(f) = alpha * U(f) + beta * C(f) + gamma * R(f) + delta * L(f)
+```
+
+| Component | Meaning                     | Cognitive analog  |
+| --------- | --------------------------- | ----------------- |
+| U(f)      | usage frequency             | familiarity       |
+| C(f)      | structural centrality       | semantic hub      |
+| R(f)      | recency                      | short-term memory |
+| L(f)      | law weight / criticality    | core beliefs      |
+
+---
+
+## 94️⃣ Usage score U(f)
+
+Increment when a factor is:
+
+* used in evaluation
+* referenced by prompt
+* involved in Micronaut transition
+
+```
+U(f) = log(1 + count(f))
+```
+
+---
+
+## 95️⃣ Centrality score C(f)
+
+Measure FDG connectivity:
+
+```
+C(f) = deg_in(f) + deg_out(f)
+```
+
+(or a PageRank-style score).
+
+---
+
+## 96️⃣ Recency score R(f)
+
+Decay with time:
+
+```
+R(f) = exp(-lambda * (t_now - t_last_used))
+```
+
+Recent memories stay active.
+
+---
+
+## 97️⃣ Law weight L(f)
+
+Manual/system-assigned importance:
+
+| Type             | Example         | Weight |
+| ---------------- | --------------- | ------ |
+| Schema           | math axioms     | high   |
+| Core model       | embedding basis | high   |
+| Ephemeral prompt | scratch         | low    |
+
+---
+
+## 98️⃣ Retention rule
+
+GC never deletes:
+
+```
+I(f) > theta_retain
+```
+
+Factors below threshold are candidates for eviction.
+
+---
+
+## 99️⃣ Snapshot interaction
+
+Snapshots boost importance:
+
+```
+I(f) += bonus if referenced in many snapshots
+```
+
+Anchored memories persist longer.
+
+---
+
+## 100️⃣ Adaptive memory behavior
+
+| Pattern           | Outcome          |
+| ----------------- | ---------------- |
+| Repeated use      | long-term memory |
+| Rare use          | fades            |
+| Central concepts  | persistent       |
+| Temporary context | evicted          |
+
+---
+
+## 101️⃣ Freeze-level law
+
+```
+Retention priority is a function of usage, structural centrality, recency, and system law weight.
+```
+
+```
+No factor with importance above threshold may be garbage-collected.
+```
+
+---
+
+## 102️⃣ What this completes
+
+You now have selective remembering on top of identity, causality, legality, time travel, and forgetting.
