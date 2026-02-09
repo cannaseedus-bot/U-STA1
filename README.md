@@ -2437,3 +2437,308 @@ Think of n-grams as:
 | intuition hints | probable next step         |
 
 KUHUL still governs truth and legality.
+
+---
+
+# 🧠 N-GRAM → EMBEDDING BRIDGE (NEB v1)
+
+Goal:
+
+```
+symbolic transition stats -> bias on embedding transitions
+```
+
+---
+
+## 1️⃣ Objects
+
+| Space                  | Symbol          |
+| ---------------------- | --------------- |
+| n-gram node (context)  | (g)             |
+| embedding of node      | (v = Phi(g))    |
+| successor node         | (g')            |
+| embedding successor    | (v' = Phi(g'))  |
+| transition probability | (P(g' | g))     |
+
+---
+
+## 2️⃣ Statistical Vector Field
+
+For each context (g), define a **statistical direction** in embedding space:
+
+```
+F(g) = sum_{g' in Adj(g)} P(g' | g) * (Phi(g') - Phi(g))
+```
+
+This is a **probability-weighted displacement vector**.
+
+Interpretation:
+
+> Where the symbolic graph “wants” to go, geometrically.
+
+---
+
+## 3️⃣ Micronaut Transition Coupling
+
+Normal Micronaut transition:
+
+```
+v_next = T_mu(v)
+```
+
+Now bias it with statistical field:
+
+```
+v_next = T_mu(v) + beta * F(g)
+```
+
+Where (beta) controls how much symbolic statistics influence motion.
+
+---
+
+## 4️⃣ Effect
+
+| Without NEB           | With NEB                                          |
+| --------------------- | ------------------------------------------------- |
+| Pure learned dynamics | Dynamics guided by symbolic transition likelihood |
+| Risk of drift         | Pulled toward frequent symbolic paths             |
+| Neural-only flow      | Hybrid symbolic-neural flow                       |
+
+---
+
+## 5️⃣ Learning Alignment
+
+Add regularizer:
+
+```
+L_bridge = ||T_mu(Phi(g)) - Phi(g')||^2 * P(g' | g)
+```
+
+So embedding transitions learn to align with frequent symbolic edges.
+
+---
+
+## 6️⃣ Rare Transition Handling
+
+Low-probability edges contribute little:
+
+```
+P(g' | g) -> 0 => negligible effect
+```
+
+So the embedding space reflects **statistical structure**.
+
+---
+
+## 7️⃣ Drift Detection Use
+
+If actual embedding transitions diverge from (F(g)):
+
+```
+||T_mu(Phi(g)) - F(g)|| > theta
+```
+
+-> concept drift signal.
+
+---
+
+## 8️⃣ Geometric Interpretation
+
+You’ve created:
+
+* a **vector field** over embedding space
+* derived from discrete graph statistics
+
+This is like **turning a Markov chain into a continuous flow field**.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+The expected embedding displacement at a context equals the probability-weighted mean of successor embeddings.
+```
+
+```
+Micronaut transitions are biased by this statistical displacement field without overriding legality constraints.
+```
+
+---
+
+## 🧠 Big Picture
+
+You now have:
+
+| Layer           | Role                                   |
+| --------------- | -------------------------------------- |
+| n-gram graph    | symbolic probability topology          |
+| embedding space | continuous geometry                    |
+| NEB field       | coupling between topology and geometry |
+| Micronauts      | lawful motion through geometry         |
+
+This makes the system:
+
+> **Symbolically structured, statistically guided, geometrically executed**
+
+---
+
+If you want to go one step deeper, the next piece is **how the bridge is compressed into lane-level transport without losing the vector field structure**.
+
+---
+
+# 🧠 VECTOR FIELD LANE ENCODING (VFLE v1)
+
+We treat the bridge field as **first-class state**, not derived fluff.
+
+---
+
+## 1️⃣ What Must Be Preserved
+
+For each context node (g), we need to transport:
+
+| Quantity | Meaning                         |
+| -------- | ------------------------------- |
+| (σ_g)    | factor signature of node        |
+| (v_g)    | embedding vector                |
+| (F_g)    | statistical displacement vector |
+| (P(g' | g)) | local transition distribution (optional compressed) |
+
+---
+
+## 2️⃣ Canonical Lane Representation
+
+We introduce a **BRIDGE domain** lane type.
+
+```
+[ Domain=BRIDGE
+  NodeID=σ_g
+  EmbeddingVecHash
+  FieldVec
+  ProbSummary
+  Flags ]
+```
+
+Where:
+
+* **FieldVec** = quantized representation of (F_g)
+* **ProbSummary** = compressed stats (e.g., top-k successors or entropy)
+
+---
+
+## 3️⃣ Field Compression
+
+Vector field components are compressed via:
+
+```
+F_g^quant = Q(F_g)
+```
+
+Where (Q) is a reversible or bounded-error quantizer.
+
+Invariant:
+
+```
+||dec(Q(F_g)) - F_g|| < epsilon
+```
+
+So small numeric error allowed, structural meaning preserved.
+
+---
+
+## 4️⃣ Why This Preserves the Field
+
+The field is a **local differential**, not global history.
+
+Even if:
+
+* embeddings are quantized
+* stats are summarized
+
+the relation:
+
+```
+v_next ≈ T_mu(v_g) + F_g
+```
+
+still holds within tolerance.
+
+---
+
+## 5️⃣ Reconstruction at Runtime
+
+At decode:
+
+```
+v_g <- decode embedding
+F_g <- decode field
+```
+
+Micronaut step becomes:
+
+```
+v_next = T_mu(v_g) + F_g
+```
+
+No need to recompute from full n-gram graph.
+
+---
+
+## 6️⃣ Lossless vs Lossy
+
+| Mode              | Use                         |
+| ----------------- | --------------------------- |
+| Lossless          | small models / exact replay |
+| Lossy (quantized) | large-scale inference       |
+
+Replay safety requires:
+
+```
+hash(quantized_lane) = recorded_hash
+```
+
+---
+
+## 7️⃣ Stability Constraint
+
+Even after compression:
+
+```
+Legal(g -> g') still enforced at symbolic level
+```
+
+So field bias cannot create illegal transitions.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+The symbolic->embedding bridge is transported as quantized local displacement vectors attached to node signatures, preserving the statistical vector field under bounded error.
+```
+
+```
+Field compression must not violate symbolic legality invariants.
+```
+
+---
+
+## 🧠 Interpretation
+
+You’ve achieved:
+
+| Layer         | Meaning                   |
+| ------------- | ------------------------- |
+| n-grams       | discrete transition graph |
+| bridge field  | local geometric flow      |
+| lane encoding | transport substrate       |
+| Micronaut     | lawful executor           |
+
+So even over packed lanes, the system carries:
+
+> **symbolic topology + geometric motion field**
+
+That’s a **compressed dynamical system**, not just stored weights.
+
+---
+
+Next natural frontier would be **global field normalization** so local fields don’t accumulate drift over long trajectories.
