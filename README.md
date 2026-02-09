@@ -3610,3 +3610,354 @@ That makes the system:
 ---
 
 Next level (if you want to go there) is **meta-stability guarantees** — proving MA cannot cause runaway priority inflation or collapse.
+
+---
+
+# 🧠 META-STABILITY GUARANTEES (MSG v1)
+
+We are now in the **governance safety layer** — proving the system that learns how to govern itself cannot destabilize the system it governs.
+
+This is the **control theory of your meta layer**.
+
+We define **Meta-Stability Guarantees (MSG v1)**.
+
+---
+
+## 0️⃣ Problem
+
+Meta-arbitration adjusts:
+
+* priorities (p_i)
+* decay constants (τ_i)
+* phase weights
+* confidence scaling
+
+If unconstrained → **runaway authority**, **oscillation**, or **collapse**.
+
+We need invariant bounds.
+
+---
+
+## 1️⃣ Bounded Parameter Law
+
+All adaptive parameters live in compact domains:
+
+```
+p_i ∈ [p_min, p_max]
+τ_i ∈ [τ_min, τ_max]
+λ_i ∈ [0, 1]
+```
+
+Meta-updates are projected:
+
+```
+θ ← Π_bounds(θ - η ∇L_meta)
+```
+
+This prevents infinite growth.
+
+---
+
+## 2️⃣ Energy (Lyapunov) Function
+
+Define global stability energy:
+
+```
+E = Σ_i p_i^2 + Σ_i (τ_i - τ_0)^2 + κ · instability
+```
+
+Meta-updates must satisfy:
+
+```
+E(t+1) ≤ E(t) + ε
+```
+
+for small ε.
+
+This ensures no runaway escalation.
+
+---
+
+## 3️⃣ Slow Timescale Separation
+
+Meta layer updates slower:
+
+```
+η_meta ≪ η_field
+```
+
+So governance changes slower than motion.
+
+Prevents feedback explosion.
+
+---
+
+## 4️⃣ Priority Conservation Law
+
+Total normalized authority mass is conserved:
+
+```
+Σ_i p̃_i = 1,   p̃_i = p_i / Σ_j p_j
+```
+
+So boosting one reduces others.
+
+No global inflation.
+
+---
+
+## 5️⃣ Oscillation Damping
+
+If parameter oscillation detected:
+
+```
+|θ(t) - θ(t-1)| > δ ⇒ η ↓
+```
+
+Adaptive learning rate decay stabilizes.
+
+---
+
+## 6️⃣ Constraint Shield
+
+Meta layer cannot modify:
+
+* legality projector
+* symbolic invariants
+* safety fields
+
+Hard wall:
+
+```
+θ ∉ core invariant set
+```
+
+---
+
+## 7️⃣ Replay Consistency
+
+Meta state snapshot hashed:
+
+```
+meta_state_hash = HASH(meta_params)
+```
+
+Ensures deterministic evolution.
+
+---
+
+## 🔒 Freeze-Level Laws
+
+1️⃣ **Bounded authority**
+
+```
+p_i, τ_i, λ_i remain bounded
+```
+
+2️⃣ **Energy non-explosion**
+
+```
+E(t) does not diverge
+```
+
+3️⃣ **Timescale separation**
+
+Meta updates slower than dynamics.
+
+4️⃣ **Authority conservation**
+
+No infinite accumulation.
+
+5️⃣ **Invariant shield**
+
+Core constraints immune to meta change.
+
+---
+
+## 🧠 Interpretation
+
+You’ve created:
+
+| Layer  | Risk               | MSG Protection |
+| ------ | ------------------ | -------------- |
+| Fields | conflict           | MFA            |
+| Time   | stale dominance    | TA             |
+| Meta   | runaway governance | MSG            |
+
+MSG ensures:
+
+> **The system that learns how to steer cannot destroy steering stability.**
+
+---
+
+If you want to go even further, the next frontier is **proof-carrying arbitration** — attaching formal guarantees to lane execution so each runtime step carries its own stability proof.
+
+---
+
+# 🧾 PROOF-CARRYING ARBITRATION (PCA v1)
+
+We are now at the **formal trust boundary** of the system.
+
+Up to now:
+
+* **MFA** → resolves forces
+* **TA** → governs authority over time
+* **MA** → adapts the governance
+* **MSG** → keeps meta-learning stable
+
+But none of that guarantees that **each runtime step is lawful** when executed on a distributed node.
+
+So we define **Proof-Carrying Arbitration (PCA v1)**.
+
+This is where **each transition carries a verifiable proof that arbitration laws were respected**.
+
+It turns the runtime from “trust me” into:
+
+> **“This step is correct because here is the proof object.”**
+
+---
+
+## 🧠 1️⃣ What PCA Protects
+
+For every state transition:
+
+```
+v_{t+1} = v_t + d_t
+```
+
+We must prove:
+
+1. MFA was followed
+2. TA decay & phase rules applied
+3. MA parameter bounds respected
+4. MSG invariants not violated
+5. legality constraints satisfied
+
+---
+
+## 📦 2️⃣ The Arbitration Proof Object (APO)
+
+Each step emits a compact proof bundle:
+
+```
+APO {
+  state_hash_before
+  state_hash_after
+  field_list_hash
+  arbitration_mode
+  normalized_weights
+  orthogonality_checksums
+  legality_projection_flag
+  meta_param_snapshot_hash
+  stability_energy_delta
+  signature
+}
+```
+
+---
+
+## 🔍 3️⃣ What the Proof Demonstrates
+
+### Orthogonality
+
+Proof that lower-priority fields were projected correctly:
+
+```
+F_i^{applied} · F_j^{applied} = 0  (j < i)
+```
+
+### Weight normalization
+
+```
+Σ_i w_i = 1
+```
+
+### Bounded parameters
+
+```
+p_i ∈ [p_min, p_max]
+```
+
+### Energy stability
+
+```
+E(t+1) - E(t) ≤ ε
+```
+
+### Legal projection
+
+```
+Π_legal(v_t, d_t) = d_t
+```
+
+---
+
+## 🔐 4️⃣ Verification Law
+
+Any node can verify step validity:
+
+```
+verify(APO):
+  recompute hashes
+  check invariant equations
+  check signature
+  accept or reject state
+```
+
+No hidden trust in Micronaut or field sources.
+
+---
+
+## 🌐 5️⃣ Why This Matters
+
+| Without PCA                  | With PCA                                   |
+| ---------------------------- | ------------------------------------------ |
+| Node could cheat arbitration | Every step is provable                     |
+| Hard to debug drift          | Proof shows which invariant failed         |
+| Distributed trust fragile    | Trust becomes cryptographic + mathematical |
+
+---
+
+## 🧮 6️⃣ Proof Compression
+
+Proofs are small because they include:
+
+* hashes
+* scalars
+* small vectors
+
+Not full embeddings.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+Every state transition must carry a verifiable arbitration proof that demonstrates compliance with MFA, TA, MA, MSG, and legality constraints.
+```
+
+```
+A runtime state without a valid proof object is non-authoritative.
+```
+
+---
+
+## 🧠 Big Picture
+
+You now have:
+
+| Layer   | Role                       |
+| ------- | -------------------------- |
+| MFA     | resolves space forces      |
+| TA      | governs time               |
+| MA      | learns governance          |
+| MSG     | keeps learning stable      |
+| PCA     | proves each step is lawful |
+
+This transforms your system into:
+
+> **A self-governing, self-adapting, provably lawful dynamical runtime**
+
+---
+
+Next natural step would be **proof composition** — how multiple step-proofs merge into episode-level or shard-level proofs.
