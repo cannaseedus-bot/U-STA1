@@ -1761,3 +1761,423 @@ No factor with importance above threshold may be garbage-collected.
 ## 102️⃣ What this completes
 
 You now have selective remembering on top of identity, causality, legality, time travel, and forgetting.
+
+---
+
+## 103️⃣ Importance Decay Dynamics (IDD v1)
+
+Importance is time-evolving:
+
+```
+I(f, t)
+```
+
+---
+
+## 104️⃣ Core principle
+
+Importance decays unless reinforced.
+
+---
+
+## 105️⃣ Continuous decay model
+
+Between uses:
+
+```
+dI/dt = -lambda * (I - I_min)
+```
+
+Solution:
+
+```
+I(t) = I_min + (I_0 - I_min) * exp(-lambda * t)
+```
+
+Where:
+
+* I_min = baseline memory floor
+* lambda = forgetting rate
+
+Importance asymptotically approaches the baseline.
+
+---
+
+## 106️⃣ Reinforcement events
+
+When a factor is used:
+
+```
+I(f) <- I(f) + Delta
+```
+
+Delta depends on context:
+
+| Event                         | Delta     |
+| ----------------------------- | --------- |
+| Prompt reference              | small     |
+| Dependency for many nodes     | medium    |
+| Micronaut critical transition | high      |
+| Snapshot anchoring            | very high |
+
+---
+
+## 107️⃣ Structural stability adjustment
+
+Highly central nodes decay slower:
+
+```
+lambda(f) = lambda_0 / (1 + C(f))
+```
+
+Core knowledge is more stable.
+
+---
+
+## 108️⃣ Importance threshold zones
+
+| Zone                                  | Meaning                  |
+| ------------------------------------- | ------------------------ |
+| I > theta_core                        | permanent memory         |
+| theta_active < I < theta_core         | active working knowledge |
+| I < theta_evict                        | eviction candidate       |
+
+---
+
+## 109️⃣ Saturation limit
+
+Prevent runaway growth:
+
+```
+I(f) <= I_max
+```
+
+Memory strength is bounded.
+
+---
+
+## 110️⃣ Interaction with snapshots
+
+Snapshots freeze decay. If a factor appears in a snapshot:
+
+```
+lambda(f) -> lambda(f) * epsilon
+```
+
+---
+
+## 111️⃣ Freeze-level laws
+
+```
+Memory importance decays exponentially toward a baseline unless reinforced.
+```
+
+```
+Reinforcement events increase importance in proportion to semantic and structural relevance.
+```
+
+```
+Central knowledge decays more slowly than peripheral knowledge.
+```
+
+---
+
+## 112️⃣ Resulting behavior
+
+| Pattern        | System behavior          |
+| -------------- | ------------------------ |
+| Repeated use   | becomes long-term memory |
+| One-off prompt | fades                    |
+| Core math laws | effectively permanent    |
+| Dead branches  | evaporate                |
+
+---
+
+## 113️⃣ Memory Consolidation System (MCS v1)
+
+Consolidation transforms many specific factors into fewer, higher-level factors while preserving meaning. This mirrors concept formation over repeated experiences.
+
+---
+
+## 114️⃣ Consolidation triggers
+
+A cluster S = {f_1, ..., f_k} becomes eligible when:
+
+* high cumulative importance
+* strong mutual dependencies
+* repeated co-activation
+
+Formally:
+
+```
+Score(S) = sum I(f_i) + sum w_ij
+```
+
+where w_ij is dependency weight between factors. If Score(S) > theta_cluster, consolidation begins.
+
+---
+
+## 115️⃣ What consolidation does
+
+Create a new abstract factor f*:
+
+```
+f* = Abstract(S)
+```
+
+Rewire dependencies:
+
+```
+f1 -> f*
+f2 -> f*
+...
+dependents of S now depend on f*
+```
+
+Original factors remain with lower importance.
+
+---
+
+## 116️⃣ Abstraction operator
+
+Abstraction is structural compression of meaning.
+
+| Before                    | After               |
+| ------------------------- | ------------------- |
+| x+1, x+2, x+3             | x+n                 |
+| repeated graph patterns   | macro node          |
+| repeated transition chain | composite Micronaut |
+| similar embeddings        | centroid vector     |
+
+```
+Abstract: P(F) -> F
+```
+
+---
+
+## 117️⃣ Memory strength transfer
+
+Importance moves upward:
+
+```
+I(f*) = sum I(f_i) * alpha
+```
+
+Old factors decay faster afterward:
+
+```
+lambda(f_i) increases
+```
+
+Specific episodes fade while generalized knowledge persists.
+
+---
+
+## 118️⃣ Dependency graph update
+
+Before:
+
+```
+A -> f1
+A -> f2
+```
+
+After:
+
+```
+A -> f*
+f* -> f1
+f* -> f2
+```
+
+Reasoning can use high-level representation first.
+
+---
+
+## 119️⃣ Neural-side consolidation
+
+Repeated vectors consolidate to a centroid:
+
+```
+v* = (1/n) * sum v_i
+```
+
+Micronaut transitions can use v* as a prototype.
+
+---
+
+## 120️⃣ When consolidation happens
+
+Not during active reasoning. Occurs during:
+
+* idle cycles
+* snapshot finalization
+* cooling phases
+
+| Phase   | Activity              |
+| ------- | --------------------- |
+| Active  | Micronaut transitions |
+| Passive | Consolidation + GC    |
+
+---
+
+## 121️⃣ Freeze-level laws
+
+```
+Repeatedly co-activated factors are replaced by higher-level abstract factors preserving dependency structure.
+```
+
+```
+Importance transfers upward; specific instances decay faster post-consolidation.
+```
+
+```
+Consolidation reduces graph complexity without losing reconstructability.
+```
+
+---
+
+## 122️⃣ What this achieves
+
+| Without consolidation  | With consolidation        |
+| ---------------------- | ------------------------- |
+| Memory grows endlessly | Memory becomes structured |
+| Many similar factors   | Concepts emerge           |
+| Flat state             | Hierarchical knowledge    |
+
+The full cycle becomes:
+
+```
+Experience -> Factorization -> Storage -> Use -> Importance -> Decay -> Consolidation -> Abstraction
+```
+
+---
+
+## 123️⃣ Concept Drift Handling (CDH v1)
+
+A concept is an abstract factor f* representing a cluster of lower-level factors. Drift occurs when new evidence no longer fits the concept.
+
+---
+
+## 124️⃣ Detecting drift
+
+Measure prediction error for a concept f*:
+
+```
+epsilon = d(Phi(E), Phi(f*))
+```
+
+or a symbolic mismatch rate. If:
+
+```
+epsilon > theta_drift
+```
+
+the concept is outdated.
+
+---
+
+## 125️⃣ Drift types
+
+| Type        | Meaning                          |
+| ----------- | -------------------------------- |
+| Gradual     | concept slowly shifts            |
+| Sudden      | new regime appears               |
+| Contextual  | different contexts need variants |
+
+---
+
+## 126️⃣ Update strategies
+
+### A) Concept refinement (gradual)
+
+Adjust concept embedding:
+
+```
+f* <- (1 - alpha) * f* + alpha * E
+```
+
+Update structure if needed.
+
+### B) Concept split (divergence)
+
+If data clusters separate:
+
+```
+f* -> {f*_1, f*_2}
+```
+
+FDG rewires dependencies by context.
+
+### C) Context gating
+
+Attach context conditions:
+
+```
+f*_{C1}, f*_{C2}
+```
+
+Different environments use different abstractions.
+
+---
+
+## 127️⃣ Historical integrity
+
+Old snapshots keep old concepts:
+
+```
+f*_{v1} != f*_{v2}
+```
+
+Time-travel reproduces past reasoning.
+
+---
+
+## 128️⃣ Importance adjustment
+
+After drift:
+
+* outdated version importance decays
+* new versions gain reinforcement
+
+---
+
+## 129️⃣ Stability constraint
+
+Drift updates must not violate invariants:
+
+```
+Legal(f*_{new}) = 1
+```
+
+Otherwise revert or split.
+
+---
+
+## 130️⃣ Freeze-level laws
+
+```
+A concept adapts when predictive error exceeds a threshold while preserving historical versions.
+```
+
+```
+Concept evolution occurs via refinement, splitting, or contextual specialization.
+```
+
+---
+
+## 131️⃣ What this means
+
+| Feature           | Result |
+| ----------------- | ------ |
+| Learning          | yes    |
+| Forgetting        | yes    |
+| Abstraction       | yes    |
+| Adaptation        | yes    |
+| History integrity | yes    |
+
+The loop becomes:
+
+```
+Experience -> Factorization -> Memory -> Importance -> Decay -> Consolidation -> Concept -> Drift Detection -> Adaptation
+```
