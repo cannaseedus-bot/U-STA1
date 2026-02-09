@@ -2291,3 +2291,149 @@ Together they form:
 ```
 N-grams provide probabilistic symbolic memory, KUHUL enforces semantic state law, and PowerShell orchestrates execution and IO.
 ```
+
+---
+
+# 🧠 MINIMAL N-GRAM SCHEMA (MNG v1)
+
+This module is a **symbolic transition memory layer** that stores discrete n-gram transition statistics only. It is **not** a language model. It plugs into FSS/FDG, Micronauts, and compression lanes.
+
+---
+
+## 1️⃣ Core Object
+
+An n-gram entry represents the transition:
+
+```
+(t_{i-n+1}, \dots, t_i) \rightarrow t_{i+1}
+```
+
+Stored as a **directed weighted edge**.
+
+---
+
+## 2️⃣ Data Structure
+
+```json
+{
+  "ngram": {
+    "order": 3,
+    "context": ["t₁", "t₂", "t₃"],
+    "next": "t₄",
+    "count": 42,
+    "prob": 0.12,
+    "last_seen": 1890000123,
+    "importance": 0.74
+  }
+}
+```
+
+---
+
+## 3️⃣ Field Meaning
+
+| Field          | Role                              |
+| -------------- | --------------------------------- |
+| **order**      | n in n-gram                       |
+| **context**    | factor signatures of tokens       |
+| **next**       | successor factor signature        |
+| **count**      | occurrence frequency              |
+| **prob**       | normalized transition probability |
+| **last_seen**  | recency signal                    |
+| **importance** | derived memory weight             |
+
+Tokens reference **factor signatures**, not raw text.
+
+---
+
+## 4️⃣ Transition Graph View
+
+Graph node:
+
+```
+σ(t₁,t₂,t₃)
+```
+
+Edge:
+
+```
+σ(context) → σ(next)
+```
+
+Weight:
+
+```
+count
+```
+
+---
+
+## 5️⃣ Update Rule
+
+When a sequence is observed:
+
+```
+count ← count + 1
+prob = count / Σ_{next'} count(context,next')
+importance ↑
+```
+
+---
+
+## 6️⃣ Integration Points
+
+| System Component       | Use of n-grams             |
+| ---------------------- | -------------------------- |
+| **Factorization**      | identify frequent patterns |
+| **Importance scoring** | usage signal (U(f))        |
+| **Micronaut routing**  | suggest likely transitions |
+| **Consolidation**      | detect repeated patterns   |
+| **Drift detection**    | probability shifts         |
+
+---
+
+## 7️⃣ Storage Form (Lane-Ready)
+
+Compact packed form:
+
+```
+[Domain=NGRAM | ContextHash | NextHash | Count | Prob | Timestamp]
+```
+
+This survives compression and transport.
+
+---
+
+## 8️⃣ What This Schema Does *NOT* Do
+
+It does **not**:
+
+* hold embeddings
+* perform reasoning
+* replace Micronauts
+* enforce legality
+
+It only supplies **statistical symbolic transitions**.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+An n-gram entry represents a weighted directed edge between factor signatures,
+encoding local symbolic transition statistics.
+```
+
+---
+
+## 🧠 Role in the Big System
+
+Think of n-grams as:
+
+| Brain Analogy   | Role                       |
+| --------------- | -------------------------- |
+| sensory memory  | raw transition frequencies |
+| habit memory    | common sequences           |
+| intuition hints | probable next step         |
+
+KUHUL still governs truth and legality.
