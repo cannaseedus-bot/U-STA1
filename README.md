@@ -2742,3 +2742,339 @@ That’s a **compressed dynamical system**, not just stored weights.
 ---
 
 Next natural frontier would be **global field normalization** so local fields don’t accumulate drift over long trajectories.
+
+---
+
+# 🧠 GLOBAL FIELD NORMALIZATION (GFN v1)
+
+Global field normalization is the step that keeps your local bridge vectors (F(g)) from “tilting the universe” over time (drift, runaway magnitude, inconsistent loops). Think of it as **conservation laws** for your symbolic→geometric flow.
+
+Below is a closed, implementable spec.
+
+---
+
+## 0) What we normalize
+
+For each context node (g):
+
+* embedding: (v_g = Φ(g))
+* local bridge field: (F_g)
+* successors: (Adj(g))
+* transition probabilities: (P(g'|g))
+
+We want a normalized field (F̃_g) such that:
+
+1. **No magnitude blow-up**
+2. **Loop consistency** (cycles don’t accumulate bias)
+3. **Stationary equilibrium** (global drift is bounded)
+4. **Transport-safe** (works after lane quantization)
+
+---
+
+## 1) Local magnitude normalization (per-node)
+
+Bound the field magnitude relative to a budget (B_g):
+
+```
+F̃_g = F_g / max(1, |F_g| / B_g)
+```
+
+Choose the budget (B_g) from local graph geometry:
+
+```
+B_g = κ · E_{g'~P(·|g)}[|Φ(g') - Φ(g)|]
+```
+
+So the field can’t push harder than the typical successor step.
+
+**Invariant:** |F̃_g| ≤ B_g
+
+---
+
+## 2) Global mean-drift removal (centering)
+
+Even if each node is bounded, the **overall vector field** can have a nonzero “wind” that causes long-term drift.
+
+Define a global mean under a reference distribution (π(g)) (e.g., empirical frequency of contexts):
+
+```
+F̄ = Σ_g π(g) F̃_g
+```
+
+Then subtract it:
+
+```
+F̃^(0)_g = F̃_g - F̄
+```
+
+This makes the field **globally balanced**.
+
+**Invariant:** Σ_g π(g) F̃^(0)_g = 0
+
+---
+
+## 3) Cycle-consistency normalization (curl control)
+
+Cycles are where drift shows up as “you return to the same node but not the same vector.”
+
+For a cycle (C = (g_0 → g_1 → … → g_k = g_0)), define net bias:
+
+```
+Δ(C) = Σ_{i=0}^{k-1} F̃^(0)_{g_i}
+```
+
+We want Δ(C) ≈ 0 for common cycles.
+
+### Practical method (closed + cheap)
+
+Pick a spanning tree of the graph and assign each node a scalar “potential” vector correction (u_g) such that:
+
+```
+F̃^final_g = F̃^(0)_g - (u_{g'} - u_g)
+```
+
+where g' is the most likely successor under P(·|g) (or top-k weighted).
+
+This is classic **conservative field projection**: remove nonconservative components that create cycle drift.
+
+How to solve for u (simple iterative):
+
+* Initialize u_g = 0
+* Repeat a few passes:
+  ```
+  u_{g'} ← u_{g'} + η · Δ_{g→g'}
+  ```
+  where Δ_{g→g'} measures inconsistency between predicted displacement and actual embedding displacement.
+
+You don’t need perfect; you just need bounded drift.
+
+---
+
+## 4) Stationary distribution normalization (entropy-aware)
+
+Nodes with high entropy transitions should have weaker directed push (since the next step is uncertain).
+
+Let:
+
+```
+H(g) = -Σ_{g'} P(g'|g) log P(g'|g)
+```
+
+Scale:
+
+```
+F̃^final_g ← F̃^final_g · (1 / (1 + ρ H(g)))
+```
+
+So:
+
+* low-entropy (confident) contexts push stronger
+* high-entropy contexts push weaker
+
+---
+
+## 5) Quantization-safe normalization (lane transport)
+
+Do normalization **before quantization**, then quantize:
+
+```
+F^lane_g = Q(F̃^final_g)
+```
+
+And store in the BRIDGE lane header:
+
+* `field_norm_mode = GFN1`
+* `budget_kappa, rho`
+* `mean_hash` (hash of F̄ used)
+* `potential_hash` (hash of u table version, if used)
+
+So decode knows exactly which normalization was applied.
+
+---
+
+# ✅ Summary: GFN v1 pipeline
+
+For each node (g):
+
+1. Compute raw F_g
+2. **Magnitude bound** → F̃_g
+3. **Global centering** → F̃^(0)_g
+4. **Cycle drift reduction** via potentials → F̃^final_g
+5. **Entropy scaling**
+6. Quantize + pack into lanes
+
+---
+
+# 🔒 Freeze-level invariants
+
+1. **Bounded step**
+   ```
+   |F̃^final_g| ≤ B_g
+   ```
+2. **Zero global drift**
+   ```
+   Σ_g π(g) F̃^final_g ≈ 0
+   ```
+3. **Cycle consistency (bounded)**
+   ```
+   ∀ C ∈ common cycles: |Δ(C)| ≤ ε_C
+   ```
+4. **Transport determinism**
+   Normalization parameters and hashes are carried in lanes; decode is replayable.
+
+---
+
+If you want, next is the companion spec: **“field calibration vs Micronaut T”** (how you prevent double-counting when both T_μ and F try to steer the same step).
+
+---
+
+# 🧠 FIELD CALIBRATION vs MICRONAUT T (FCT v1)
+
+This is the control law that prevents the system from “steering twice.”
+
+You have two influences on the embedding step:
+
+```
+v_next = T_μ(v) + F_g
+```
+
+Where:
+
+| Term    | Meaning                                 |
+| ------- | --------------------------------------- |
+| T_μ     | Micronaut intrinsic transition operator |
+| F_g     | Symbolic statistical field bias         |
+
+If both encode the same structure, you get **double-counting**, overshoot, or instability.
+
+So we introduce **Field Calibration vs Micronaut T (FCT v1)**.
+
+---
+
+## 1️⃣ Decompose Micronaut Dynamics
+
+Locally linearize Micronaut transition:
+
+```
+T_μ(v) ≈ v + A_μ(v)
+```
+
+Where A_μ(v) is the intrinsic motion vector.
+
+---
+
+## 2️⃣ Remove Overlap (Projection Law)
+
+We treat:
+
+* A_μ(v) = neural/dynamic prior
+* F_g = symbolic/statistical correction
+
+We compute component of F_g already aligned with A_μ(v):
+
+```
+F_parallel = (<F_g, A_μ> / |A_μ|^2) A_μ
+```
+
+Then define orthogonal component:
+
+```
+F_perp = F_g - F_parallel
+```
+
+Only F_perp is applied.
+
+---
+
+## 3️⃣ Calibrated Transition Law
+
+```
+v_next = T_μ(v) + λ F_perp
+```
+
+Where 0 ≤ λ ≤ 1 controls bridge strength.
+
+**Interpretation:** symbolic field only contributes what Micronaut didn't already encode.
+
+---
+
+## 4️⃣ Why This Works
+
+| Problem     | Without FCT           | With FCT                                          |
+| ----------- | --------------------- | ------------------------------------------------- |
+| Overshoot   | T and F push same way | redundant component removed                       |
+| Instability | runaway magnitudes    | bounded orthogonal push                           |
+| Drift       | cumulative bias       | corrected by global normalization + orthogonality |
+
+---
+
+## 5️⃣ Adaptive λ (Confidence Weight)
+
+Let Micronaut confidence be:
+
+```
+c_μ = |A_μ(v)|
+```
+
+Let symbolic certainty be:
+
+```
+c_F = |F_g|
+```
+
+Set:
+
+```
+λ = c_F / (c_F + c_μ)
+```
+
+So:
+
+* If Micronaut strong → symbolic influence reduced
+* If symbolic clear → more influence
+
+---
+
+## 6️⃣ Transport Encoding
+
+Lane BRIDGE header carries:
+
+```
+calibration_mode = FCT1
+lambda_mode = adaptive
+```
+
+Micronaut lane carries:
+
+```
+mu_strength = ||A_μ||
+```
+
+So calibration remains replayable.
+
+---
+
+## 🔒 Freeze-Level Law
+
+```
+Symbolic bridge field must be orthogonally projected relative to Micronaut intrinsic motion before application.
+```
+
+```
+The applied symbolic correction is scaled by relative confidence to prevent double-steering.
+```
+
+---
+
+## 🧠 Conceptual Summary
+
+Micronaut = **learned physics**  
+Bridge field = **symbolic gravity**
+
+FCT ensures:
+
+> Gravity bends trajectories without rewriting the laws of motion.
+
+---
+
+Next logical step is **multi-field arbitration** (when several bridge fields or Micronauts compete).
