@@ -3964,266 +3964,162 @@ Next natural step would be **proof composition** — how multiple step-proofs me
 
 ---
 
-# 🧾 PROOF COMPOSITION (PC v1)
+# 🧱 SCX Proof Transport Law (SPT v1)
 
-## 0) Core idea
+Minimal, composable, SCX-native byte layouts for **Link**, **EPO**, **SPO**, and **MPO** proofs. The layouts are mode-agnostic across **SCXQ2** and **SCXQ4**, with **zero semantic drift**.
 
-Each step emits an **Arbitration Proof Object**:
+## 0️⃣ Design Constraints
 
-```
-APO_t : (S_t -> S_{t+1})
-```
+1. Must fit in SCX lane payloads
+2. Self-delimiting
+3. Hash-stable
+4. Stream-composable
+5. No implicit structure
+6. Mode-agnostic (Q2/Q4)
 
-Composition creates higher-level proofs that are:
-
-* verifiable
-* compact
-* lossless with respect to legality + invariants
-
----
-
-## 1️⃣ Step proof canonical form
-
-For step (t):
-
-* `h_t = HASH(S_t)`
-* `h_{t+1} = HASH(S_{t+1})`
-* `m_t = HASH(meta_params_t)`
-* `a_t = HASH(arbitration_inputs_t)` (fields, weights, projections, etc.)
-* `sig_t = SIGN(h_t | h_{t+1} | m_t | a_t)`
-
-So each step is a signed link:
+All proof objects share:
 
 ```
-Link_t = (h_t, h_{t+1}, m_t, a_t, sig_t)
+[Type | Version | Length | Body]
 ```
 
 ---
 
-## 2️⃣ Sequential composition (Episode proof)
+## 1️⃣ Shared Header (all proof objects)
 
-Given steps (t=0..T-1) with:
+| Field   | Size              | Notes                                   |
+| ------- | ----------------- | --------------------------------------- |
+| Type    | 1B                | 0xA1=Link, 0xA2=EPO, 0xA3=SPO, 0xA4=MPO |
+| Version | 1B                | =0x01                                   |
+| BodyLen | 2B (Q2) / 4B (Q4) | length of body                          |
 
-```
-h_0 -> h_1 -> ... -> h_T
-```
-
-Define **episode commitment** using a Merkle chain:
-
-* leaf = `HASH(Link_t)`
-* build Merkle root:
-
-```
-R_episode = MerkleRoot({HASH(Link_t)}_{t=0}^{T-1})
-```
-
-Episode proof object:
-
-```
-EPO {
-  h_start: h0
-  h_end:   hT
-  root:    R_episode
-  count:   T
-  meta_root: MerkleRoot(m_t list)   // optional
-  sig: SIGN(h0||hT||R_episode||T)
-}
-```
-
-### Verification
-
-To verify the whole episode:
-
-* verify EPO signature
-* optionally verify any subset of steps via Merkle inclusion proofs
-* spot-check legality/projection constraints where needed
-
-**Guarantee:** the episode is exactly the ordered composition of valid step links.
+This is SCXQ2/Q4 compatible.
 
 ---
 
-## 3️⃣ Shard proof (Chunked transport)
+## 🔗 2️⃣ LINK (Step Proof)
 
-A shard is an episode chunk: steps `[t_a, t_b)`.
+Minimal data needed to verify one transition.
 
-Shard proof is identical to episode proof but scoped:
+### Body Layout
 
-```
-SPO {
-  h_start
-  h_end
-  root
-  range: [ta, tb)
-  sig
-}
-```
+| Field     | Size          |
+| --------- | ------------- |
+| h_prev    | 32B           |
+| h_next    | 32B           |
+| meta_hash | 32B           |
+| arb_hash  | 32B           |
+| flags     | 1B            |
+| sig_len   | 1B            |
+| signature | sig_len bytes |
 
-Shards can be shipped independently; stitchable if endpoints match.
+### Notes
 
-**Stitch rule:** Two shards (A,B) can compose if:
-
-```
-A.h_end = B.h_start
-```
+* 32B hashes = SHA-256 or BLAKE3 truncated
+* arb_hash commits to arbitration inputs (fields, weights, projections)
+* flags = legality projection, normalization mode, etc.
 
 ---
 
-## 4️⃣ Hierarchical composition (Proof-of-proofs)
+## 📖 3️⃣ EPO (Episode Proof)
 
-To scale further, build a tree of proof roots:
+Represents Merkle commitment to many Links.
 
-* Step roots -> Shard roots -> Episode roots -> Session roots -> Archive root
+### Body Layout
 
-Define:
+| Field          | Size    |
+| -------------- | ------- |
+| h_start        | 32B     |
+| h_end          | 32B     |
+| step_count     | 4B      |
+| root_hash      | 32B     |
+| meta_root_hash | 32B     |
+| sig_len        | 1B      |
+| signature      | sig_len |
 
-```
-R_session = MerkleRoot({R_episode_i})
-```
-
-This yields an *auditable hierarchy*.
-
----
-
-## 5️⃣ Branching composition (Fork proofs)
-
-When state history diverges:
-
-```
-h_t -> h_{t+1}^{(A)}
-h_t -> h_{t+1}^{(B)}
-```
-
-Create a **Fork Proof (FPO)**:
-
-```
-FPO {
-  h_common: ht
-  branches: [
-    { h_end: hA_end, root: R_A, sig_A },
-    { h_end: hB_end, root: R_B, sig_B }
-  ]
-  fork_reason_hash
-  sig: SIGN(ht||branches||fork_reason_hash)
-}
-```
-
-Fork proofs let you represent alternative trajectories without ambiguity.
+This is small regardless of episode size.
 
 ---
 
-## 6️⃣ Merge composition (Join proofs)
+## 🧩 4️⃣ SPO (Shard Proof)
 
-A merge takes two branch tips and produces a new state:
+Same as EPO but scoped to index range.
 
-```
-(h_A, h_B) -> h_M
-```
+### Body Layout
 
-The merge must prove:
-
-* both inputs are valid endpoints of valid proof chains
-* merge semantics were applied (your deterministic merge law)
-* resulting state hash matches
-
-**Merge Proof Object (MPO):**
-
-```
-MPO {
-  h_left:  hA
-  h_right: hB
-  root_left:  R_A
-  root_right: R_B
-  merge_mode
-  conflict_set_hash
-  resolution_hash
-  h_merged: hM
-  sig: SIGN(hA||hB||hM||merge_mode||resolution_hash)
-}
-```
-
-**Key law:** merges are first-class, not hidden.
+| Field       | Size    |
+| ----------- | ------- |
+| h_start     | 32B     |
+| h_end       | 32B     |
+| index_start | 4B      |
+| index_end   | 4B      |
+| root_hash   | 32B     |
+| sig_len     | 1B      |
+| signature   | sig_len |
 
 ---
 
-## 7️⃣ Distributed sync composition (Multi-node)
+## 🔀 5️⃣ MPO (Merge Proof)
 
-When multiple nodes produce shards:
+Proof that two branches legally merged.
 
-* each node signs its shard proofs
-* the coordinator produces an **Aggregation Proof (AGP)** that commits to all shard roots:
+### Body Layout
 
-```
-R_agg = MerkleRoot({R_shard}^{(node)})
-```
-
-```
-AGP {
-  epoch
-  agg_root: R_agg
-  members: [node_id...]
-  sigs: [sig_node...]
-  coordinator_sig
-}
-```
-
-This is “consensus without executing consensus”: it’s *auditable publication*.
+| Field           | Size    |
+| --------------- | ------- |
+| h_left          | 32B     |
+| h_right         | 32B     |
+| root_left       | 32B     |
+| root_right      | 32B     |
+| merge_mode      | 1B      |
+| conflict_hash   | 32B     |
+| resolution_hash | 32B     |
+| h_merged        | 32B     |
+| sig_len         | 1B      |
+| signature       | sig_len |
 
 ---
 
-## 8️⃣ What you can verify cheaply
+## 🧠 6️⃣ Packing into SCX Lanes
 
-Depending on trust level, you can verify:
+Proof objects are payloads inside **SCX Domain = PROOF (0x0F)**.
 
-### Level 0 (fast)
+### SCXQ2 lane
 
-* verify only top-level proof signatures and endpoint hashes
+| Field      | Size         |
+| ---------- | ------------ |
+| Domain     | 1B           |
+| Opcode     | 2B           |
+| Flags      | 1B           |
+| TargetID   | 4B           |
+| PayloadLen | 2B           |
+| Payload    | proof object |
 
-### Level 1 (medium)
+### SCXQ4 lane
 
-* verify random step inclusion proofs (Merkle sampling)
+Same but:
 
-### Level 2 (full)
+* TargetID = 8B
+* PayloadLen = 4B
 
-* verify every step proof + all invariants
-
-This gives scalable auditing.
-
----
-
-## 🔒 PC v1 Freeze Laws
-
-1. **Chain integrity**
-
-   ```
-   h_{t+1} in Link_t == h_{t+1} in Link_{t+1}.h_t
-   ```
-
-2. **Composable endpoints**
-
-   Two proofs compose iff end hash matches start hash.
-
-3. **Merkle commitment**
-
-   Any composed proof must commit to the exact ordered set of subproofs via a root.
-
-4. **Forks are explicit**
-
-   Divergence must be represented by a fork proof.
-
-5. **Merges are explicit**
-
-   Joining histories must be represented by a merge proof using deterministic merge semantics.
+Proof byte layout inside payload **does not change**.
 
 ---
 
-## 🧠 Intuition
+## 🔐 7️⃣ Hash Stability Law
 
-* **Step proofs** = receipts
-* **Merkle roots** = receipts stapled into a book
-* **Fork proofs** = “two editions of the story”
-* **Merge proofs** = “we combined editions under rules”
-* **Aggregation proofs** = “many publishers released shards; here’s the catalog root”
+Proof hash = HASH(entire payload bytes exactly as stored)
+
+No canonicalization, no reordering.
 
 ---
 
-If you want, next we can specify **the minimal byte layout** for Link/EPO/SPO/MPO so this composes cleanly inside SCX lane packing (SCXQ2/SCXQ4 dual-mode).
+## 🔒 Freeze-Level Law (SPT v1)
+
+```
+All proof objects are self-contained byte structures with a shared header and fixed hash field sizes, designed to embed directly as SCX lane payloads without transformation.
+```
+
+```
+Proof composition uses Merkle roots and endpoint hashes only; inner steps are referenced by inclusion proofs, not inlined.
+```
